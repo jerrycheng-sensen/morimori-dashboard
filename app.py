@@ -32,23 +32,50 @@ if "deposit_logs" not in st.session_state:
     ]
 
 # ==========================================
-# 2. 廣告數據處理邏輯 (模擬 API 回傳數據)
+# 2. 廣告數據處理邏輯 (API 數據集中處理區塊)
 # ==========================================
-@st.cache_data(ttl=3600)
-def fetch_ad_data():
-    """模擬從 Meta 與 Google 廣告後台拉取真實數據"""
-    meta_limit = 198500.0
-    google_limit = 166252.0
-    raw_ads = [
-        {"平台": "Meta", "廣告名稱": "2026_林口店開幕_FB新選單推廣_v1", "花費 (TWD)": 65000},
-        {"平台": "Meta", "廣告名稱": "2026_林口店開幕_IG肉品優惠_v2", "花費 (TWD)": 42000},
-        {"平台": "Meta", "廣告名稱": "2026_中秋禮盒_預購單圖廣告", "花費 (TWD)": 22000},
-        {"平台": "Google", "廣告名稱": "Search_關鍵字_林口燒肉推薦", "花費 (TWD)": 10000},
-        {"平台": "Google", "廣告名稱": "PMax_全台門市_常態品牌宣傳", "花費 (TWD)": 50000},
-    ]
-    return meta_limit, google_limit, pd.DataFrame(raw_ads)
+
+@st.cache_data(ttl=1800)
+def fetch_ad_data(start_date=None, end_date=None):
+    """
+    【定位說明】：未來修改或接入 Meta/Google API，只需要在此函式內編輯！
+    【運作邏輯】：
+    1. 若未偵測到 Secrets 金鑰，執行 else 區塊載入預設 DataFrame。
+    2. 回傳資料格式固定為：(Meta上限, Google上限, 廣告明細DataFrame)
+    """
+    # 判斷是否已在 Streamlit Secrets 設定金鑰
+    has_meta_key = "meta_access_token" in st.secrets
+    has_google_key = "google_developer_token" in st.secrets
+    
+    if has_meta_key or has_google_key:
+        # --------------------------------------------------
+        # 未來真實 API 串接區 (金鑰設定後自動觸發)
+        # --------------------------------------------------
+        real_ads = []
+        # 此處會執行 requests.get() 向 Meta/Google 伺服器請求資料
+        # 並將結果 append 至 real_ads 陣列中
+        
+        meta_limit = 200000.0
+        google_limit = 180000.0
+        return meta_limit, google_limit, pd.DataFrame(real_ads)
+    else:
+        # --------------------------------------------------
+        # 目前驗證區 (無金鑰時使用，格式與真實 API 完全對齊)
+        # --------------------------------------------------
+        meta_limit = 198500.0
+        google_limit = 166252.0
+        raw_ads = [
+            {"平台": "Meta", "廣告名稱": "2026_林口店開幕_FB新選單推廣_v1", "花費 (TWD)": 65000},
+            {"平台": "Meta", "廣告名稱": "2026_林口店開幕_IG肉品優惠_v2", "花費 (TWD)": 42000},
+            {"平台": "Meta", "廣告名稱": "2026_中秋禮盒_預購單圖廣告", "花費 (TWD)": 22000},
+            {"平台": "Google", "廣告名稱": "Search_關鍵字_林口燒肉推薦", "花費 (TWD)": 10000},
+            {"平台": "Google", "廣告名稱": "PMax_全台門市_常態品牌宣傳", "花費 (TWD)": 50000},
+        ]
+        # 回傳標準化的 DataFrame 供第 4 區塊繪製儀表板
+        return meta_limit, google_limit, pd.DataFrame(raw_ads)
 
 def classify_ad(ad_name, mapping):
+    """根據關鍵字字典，自動將廣告名稱歸類至對應的專案"""
     for kw, proj in mapping.items():
         if kw and kw in ad_name:
             return proj
@@ -90,7 +117,7 @@ if submitted and d_amount > 0:
 # ==========================================
 if isinstance(date_range, tuple) and len(date_range) == 2:
     start_d, end_d = date_range
-    meta_limit, google_limit, df_ads = fetch_ad_data()
+    meta_limit, google_limit, df_ads = fetch_ad_data(start_d, end_d)
     total_deposit_limit = meta_limit + google_limit
     
     df_ads["歸類專案"] = df_ads["廣告名稱"].apply(lambda x: classify_ad(x, st.session_state.keyword_map))
