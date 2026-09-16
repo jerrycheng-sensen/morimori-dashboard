@@ -20,26 +20,26 @@ def classify_ad(ad_name, keyword_map):
     return "其他/未歸類專案"
 
 # ==========================================
-# 1. 頁面配置與全域記憶體初始化 (永久防遺失版)
+# 1. 頁面配置與全域記憶體初始化
 # ==========================================
 st.set_page_config(page_title="morimori - 廣告預算儀表板", layout="wide")
 st.title("🥩 morimori - 廣告預算與水額即時儀表板")
 
-# 1. 代理商開立的平台額度上限
+# 1. 代理商開立的平台額度上限 (預設備援值)
 if "meta_account_limit" not in st.session_state:
-    st.session_state.meta_account_limit = 200000.0  # Meta 預設總額度上限
+    st.session_state.meta_account_limit = 198500.0  # 預設與圖片同步
 
 if "google_account_limit" not in st.session_state:
     st.session_state.google_account_limit = 150000.0  # Google 預設總額度上限
 
-# 2. 專案關鍵字歸類規則 (已寫入森鑽卡，重啟不遺失)
+# 2. 專案關鍵字歸類規則 (寫入永久記憶庫)
 if "keyword_map" not in st.session_state:
     st.session_state.keyword_map = {
         "林口": "林口店開幕專案",
         "中秋": "中秋燒肉禮盒專案",
         "常態": "品牌常態宣傳專案",
         "足球": "足球應援祭專案",
-        "森鑽": "森鑽卡宣傳專案"  # 🟢 森鑽卡關鍵字
+        "森鑽": "森鑽卡宣傳專案"
     }
 
 # 3. 各專案規劃預算
@@ -49,13 +49,42 @@ if "project_budgets" not in st.session_state:
         "中秋燒肉禮盒專案": 50000.0,
         "品牌常態宣傳專案": 80000.0,
         "足球應援祭專案": 60000.0,
-        "森鑽卡宣傳專案": 78500.0,  # 🟢 森鑽卡預算
+        "森鑽卡宣傳專案": 78500.0,
         "其他/未歸類專案": 0.0
     }
 
 # ==========================================
-# 2. Meta API 數據抓取邏輯
+# 2. Meta API 數據抓取 (含 spend_cap 上限自動抓取)
 # ==========================================
+def fetch_meta_account_spend_cap():
+    """
+    🟢 程式碼作用：向 Meta API 查詢該廣告帳號於後台設定的「帳號花費上限 (spend_cap)」
+    """
+    if "meta_access_token" not in st.secrets or "meta_ad_account_id" not in st.secrets:
+        return None
+        
+    token = st.secrets["meta_access_token"]
+    account_id = str(st.secrets["meta_ad_account_id"]).strip()
+    clean_id = account_id if account_id.startswith("act_") else f"act_{account_id}"
+    
+    url = f"https://graph.facebook.com/v19.0/{clean_id}"
+    params = {
+        "access_token": token,
+        "fields": "spend_cap"
+    }
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        res_data = response.json()
+        if "spend_cap" in res_data:
+            # Meta API 回傳單位為「分」，除以 100 轉為 TWD 元
+            cap_twd = float(res_data["spend_cap"]) / 100.0
+            return cap_twd
+    except Exception:
+        pass
+    return None
+
+
 def fetch_meta_ads_data(start_date=None, end_date=None, is_all_time=False):
     if "meta_access_token" not in st.secrets or "meta_ad_account_id" not in st.secrets:
         return []
@@ -103,7 +132,14 @@ def get_ads_data_safely(ads_list):
     return df
 
 # ==========================================
-# 3. 側邊欄控制項 (前台自主管理)
+# 3. 自動更新 Meta 帳號上限金額
+# ==========================================
+auto_spend_cap = fetch_meta_account_spend_cap()
+if auto_spend_cap and auto_spend_cap > 0:
+    st.session_state.meta_account_limit = auto_spend_cap
+
+# ==========================================
+# 4. 側邊欄控制項 (前台自主管理)
 # ==========================================
 st.sidebar.header("⚙️ 儀表板控制台")
 today = datetime.today()
@@ -115,10 +151,11 @@ st.sidebar.divider()
 with st.sidebar.expander("🛠️ 前台總額度與專案管理台", expanded=True):
     
     st.markdown("**1️⃣ 代理商平台總額度設定**")
+    st.caption("💡 Meta 總額度已開啓 API 自動讀取後台「帳號花費上限」")
     with st.form("limit_form"):
         m_lim = st.number_input("Meta 帳號總額度 (TWD)", value=st.session_state.meta_account_limit, step=10000.0)
         g_lim = st.number_input("Google 帳號總額度 (TWD)", value=st.session_state.google_account_limit, step=10000.0)
-        btn_save_lim = st.form_submit_button("💾 更新平台總額度")
+        btn_save_lim = st.form_submit_button("💾 手動微調總額度")
         if btn_save_lim:
             st.session_state.meta_account_limit = m_lim
             st.session_state.google_account_limit = g_lim
@@ -147,7 +184,7 @@ with st.sidebar.expander("🛠️ 前台總額度與專案管理台", expanded=T
             st.success(f"✅ 規則已生效：含「{new_kw}」自動歸類至【{target_proj}】")
 
 # ==========================================
-# 4. 主畫面呈現：雙區塊數據與指標面板
+# 5. 主畫面呈現：雙區塊數據與指標面板
 # ==========================================
 if isinstance(date_range, tuple) and len(date_range) == 2:
     start_d, end_d = date_range
@@ -161,7 +198,7 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     google_remaining = st.session_state.google_account_limit - 0.0
     total_remaining = meta_remaining + google_remaining
 
-    # 🟢 計算未配給專案的預算水額
+    # 計算未配給專案的預算水額
     total_platform_limit = st.session_state.meta_account_limit + st.session_state.google_account_limit
     total_allocated_budget = sum(st.session_state.project_budgets.values())
     unallocated_budget = total_platform_limit - total_allocated_budget
@@ -180,11 +217,11 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     # ==========================================
     # 呈現區塊 1：⚡ 即時帳號剩餘水額與未分配預算
     # ==========================================
-    st.subheader("⚡ 即時帳號水額概況 (代理商開立額度 - 全時段花費)")
+    st.subheader("⚡ 即時帳號水額概況 (API 自動讀取後台額度上限 - 全時段花費)")
     r1, r2, r3, r4 = st.columns(4)
     r1.metric("雙平台總剩餘可用水額", f"${total_remaining:,.0f} TWD")
-    r2.metric("Meta Ads 剩餘可用水額", f"${meta_remaining:,.0f} TWD")
-    r3.metric("Google Ads 剩餘可用水額", f"${google_remaining:,.0f} TWD")
+    r2.metric("Meta Ads 剩餘可用水額", f"${meta_remaining:,.0f} TWD", help=f"API 抓取最新後台上限: ${st.session_state.meta_account_limit:,.0f}")
+    r3.metric("Google Ads 剩餘可用水額", f"${google_remaining:,.0f} TWD", help=f"設定上限: ${st.session_state.google_account_limit:,.0f}")
     r4.metric("雙平台尚未分配專案水額", f"${unallocated_budget:,.0f} TWD", help="代理商總額度 - 各專案已規劃預算總和")
 
     st.divider()
