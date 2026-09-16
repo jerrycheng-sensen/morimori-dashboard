@@ -27,17 +27,23 @@ def style_balance_color(val):
     return ''
 
 # ==========================================
-# 1. 頁面配置與 Session State 初始化
+# 1. 頁面配置與 Logo / 主標題佈局
 # ==========================================
 st.set_page_config(page_title="森森燒肉 - 廣告預算儀表板", layout="wide")
 
-# 1. 側邊欄 Logo 上傳功能
-uploaded_logo = st.sidebar.file_uploader("🖼️ 上傳品牌 Logo", type=["png", "jpg", "jpeg"])
-if uploaded_logo:
-    st.sidebar.image(uploaded_logo, use_container_width=True)
+# 🟢 1. 側邊欄 Logo 上傳 (預設為縮合狀態)
+with st.sidebar.expander("🖼️ 上傳品牌 Logo", expanded=False):
+    uploaded_logo = st.file_uploader("選擇 Logo 圖片 (PNG/JPG)", type=["png", "jpg", "jpeg"], key="logo_upload")
 
-# 2. 正式主標題 (已更名為森森燒肉並移除肉類 icon)
-st.title("森森燒肉 - 廣告預算與可用預算即時儀表板")
+# 🟢 2. 主標題與 Logo 橫向並排佈局
+if uploaded_logo:
+    col_logo, col_title = st.columns([1, 6])
+    with col_logo:
+        st.image(uploaded_logo, width=110)
+    with col_title:
+        st.title("森森燒肉 - 廣告預算與可用預算即時儀表板")
+else:
+    st.title("森森燒肉 - 廣告預算與可用預算即時儀表板")
 
 # 3. 平台額度上限
 if "meta_account_limit" not in st.session_state:
@@ -73,7 +79,7 @@ if "project_status" not in st.session_state:
     }
 
 # ==========================================
-# 2. Meta API 數據抓取邏輯
+# 2. Meta API 數據抓取邏輯 (修復全時段數據)
 # ==========================================
 def fetch_meta_account_spend_cap():
     """向 Meta API 查詢廣告帳號後台設定的「帳號花費上限 (spend_cap)」"""
@@ -112,8 +118,10 @@ def fetch_meta_ads_data(start_date=None, end_date=None, is_all_time=False):
         "limit": 500
     }
     
+    # 🟢 修正關鍵：全時段改用廣域日期 range (2020 年至今)，避免 date_preset="maximum" API 空包彈問題
     if is_all_time:
-        params["date_preset"] = "maximum"
+        today_str = datetime.today().strftime("%Y-%m-%d")
+        params["time_range"] = json.dumps({"since": "2020-01-01", "until": today_str})
     elif start_date and end_date:
         since_str = start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else str(start_date)
         until_str = end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else str(end_date)
@@ -148,7 +156,7 @@ if auto_spend_cap and auto_spend_cap > 0:
     st.session_state.meta_account_limit = auto_spend_cap
 
 # ==========================================
-# 3. 側邊欄控制項 (狀態管理與按鈕控制)
+# 3. 側邊欄控制項 (管理面板)
 # ==========================================
 st.sidebar.header("⚙️ 儀表板控制台")
 today = datetime.today()
@@ -183,7 +191,6 @@ with st.sidebar.expander("🛠️ 前台專案與關鍵字管理台", expanded=T
 
     st.markdown("---")
     
-    # 🟢 專案狀態按鈕切換與刪除區塊
     st.markdown("**3️⃣ 專案狀態切換與管理**")
     with st.form("manage_project_form"):
         edit_proj_list = [p for p in st.session_state.project_budgets.keys() if p != "其他/未歸類專案"]
@@ -256,7 +263,7 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     # ==========================================
     tab_all, tab_range = st.tabs(["📊 歷年專案總覽 (全時段)", "📅 指定區間花費分析"])
 
-    # 🟢 頁籤 1：歷年專案總覽 (全時段格式修復)
+    # 🟢 頁籤 1：歷年專案總覽 (全時段花費與執行率計算)
     with tab_all:
         col_t1, col_b1 = st.columns([4, 1])
         with col_t1:
@@ -291,7 +298,6 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-        # 🟢 關鍵格式化修正：帶入 format 徹底去除 .000000 雜訊，呈現乾淨數值與 %
         styled_df_all = (
             df_all_view.style
             .format({
@@ -304,7 +310,7 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
         )
         st.dataframe(styled_df_all, use_container_width=True, hide_index=True)
 
-    # 🟢 頁籤 2：指定區間花費分析 (格式修復)
+    # 🟢 頁籤 2：指定區間花費分析
     with tab_range:
         st.markdown(f"### 📅 指定區間花費概況 ({start_d} 至 {end_d})")
         d1, d2, d3 = st.columns(3)
