@@ -20,46 +20,43 @@ def classify_ad(ad_name, keyword_map):
     return "其他/未歸類專案"
 
 # ==========================================
-# 1. 頁面配置與全域記憶體初始化 (前台可控)
+# 1. 頁面配置與全域記憶體初始化 (永久防遺失版)
 # ==========================================
 st.set_page_config(page_title="morimori - 廣告預算儀表板", layout="wide")
 st.title("🥩 morimori - 廣告預算與水額即時儀表板")
 
-# 1. 代理商開立的平台額度上限 (可於前台動態調整)
+# 1. 代理商開立的平台額度上限
 if "meta_account_limit" not in st.session_state:
-    st.session_state.meta_account_limit = 200000.0  # Meta 預設上限額度
+    st.session_state.meta_account_limit = 200000.0  # Meta 預設總額度上限
 
 if "google_account_limit" not in st.session_state:
-    st.session_state.google_account_limit = 150000.0  # Google 預設上限額度
+    st.session_state.google_account_limit = 150000.0  # Google 預設總額度上限
 
-# 2. 專案關鍵字歸類規則 (前台動態新增)
+# 2. 專案關鍵字歸類規則 (已寫入森鑽卡，重啟不遺失)
 if "keyword_map" not in st.session_state:
     st.session_state.keyword_map = {
         "林口": "林口店開幕專案",
         "中秋": "中秋燒肉禮盒專案",
         "常態": "品牌常態宣傳專案",
-        "足球": "足球應援祭專案"
+        "足球": "足球應援祭專案",
+        "森鑽": "森鑽卡宣傳專案"  # 🟢 森鑽卡關鍵字
     }
 
-# 3. 各專案規劃預算 (前台動態新增)
+# 3. 各專案規劃預算
 if "project_budgets" not in st.session_state:
     st.session_state.project_budgets = {
         "林口店開幕專案": 60000.0,
         "中秋燒肉禮盒專案": 50000.0,
         "品牌常態宣傳專案": 80000.0,
         "足球應援祭專案": 60000.0,
+        "森鑽卡宣傳專案": 78500.0,  # 🟢 森鑽卡預算
         "其他/未歸類專案": 0.0
     }
 
 # ==========================================
-# 2. Meta API 雙時態數據抓取邏輯
+# 2. Meta API 數據抓取邏輯
 # ==========================================
 def fetch_meta_ads_data(start_date=None, end_date=None, is_all_time=False):
-    """
-    程式碼作用：向 Meta API 抓取廣告資料
-    - is_all_time=True: 抓取有史以來總累積花費 (用以算即時剩餘可用預算)
-    - start_date / end_date: 抓取指定區間花費
-    """
     if "meta_access_token" not in st.secrets or "meta_ad_account_id" not in st.secrets:
         return []
         
@@ -100,14 +97,13 @@ def fetch_meta_ads_data(start_date=None, end_date=None, is_all_time=False):
         return []
 
 def get_ads_data_safely(ads_list):
-    """輔助函式：確保 DataFrame 具備標準欄位"""
     df = pd.DataFrame(ads_list)
     if df.empty or "廣告名稱" not in df.columns:
         df = pd.DataFrame(columns=["平台", "廣告名稱", "花費 (TWD)"])
     return df
 
 # ==========================================
-# 3. 側邊欄控制項 (100% 前台自主管理面板)
+# 3. 側邊欄控制項 (前台自主管理)
 # ==========================================
 st.sidebar.header("⚙️ 儀表板控制台")
 today = datetime.today()
@@ -116,23 +112,20 @@ date_range = st.sidebar.date_input("查詢日期區間：", value=(first_day, to
 
 st.sidebar.divider()
 
-# 前台專案與平台額度管理
 with st.sidebar.expander("🛠️ 前台總額度與專案管理台", expanded=True):
     
-    # 1. 調整代理商平台開立上限
-    st.markdown("**1️⃣ 設定代理商平台額度上限**")
+    st.markdown("**1️⃣ 代理商平台總額度設定**")
     with st.form("limit_form"):
-        m_lim = st.number_input("Meta 帳號上限 (TWD)", value=st.session_state.meta_account_limit, step=10000.0)
-        g_lim = st.number_input("Google 帳號上限 (TWD)", value=st.session_state.google_account_limit, step=10000.0)
-        btn_save_lim = st.form_submit_button("💾 更新平台總上限")
+        m_lim = st.number_input("Meta 帳號總額度 (TWD)", value=st.session_state.meta_account_limit, step=10000.0)
+        g_lim = st.number_input("Google 帳號總額度 (TWD)", value=st.session_state.google_account_limit, step=10000.0)
+        btn_save_lim = st.form_submit_button("💾 更新平台總額度")
         if btn_save_lim:
             st.session_state.meta_account_limit = m_lim
             st.session_state.google_account_limit = g_lim
-            st.success("✅ 代理商平台總上限已更新！")
+            st.success("✅ 總額度已更新！")
 
     st.markdown("---")
     
-    # 2. 建立新專案與目標預算
     st.markdown("**2️⃣ 建立新專案與目標預算**")
     with st.form("add_project_form", clear_on_submit=True):
         new_proj_name = st.text_input("專案名稱", placeholder="例如：跨年檔期專案")
@@ -144,7 +137,6 @@ with st.sidebar.expander("🛠️ 前台總額度與專案管理台", expanded=T
 
     st.markdown("---")
     
-    # 3. 關鍵字自動歸類
     st.markdown("**3️⃣ 設定廣告名稱關鍵字歸類**")
     with st.form("add_keyword_form", clear_on_submit=True):
         new_kw = st.text_input("廣告名稱關鍵字", placeholder="例如：跨年")
@@ -160,17 +152,21 @@ with st.sidebar.expander("🛠️ 前台總額度與專案管理台", expanded=T
 if isinstance(date_range, tuple) and len(date_range) == 2:
     start_d, end_d = date_range
     
-    # --- A. 計算「即時全帳號水額數據」(不受日期選單影響) ---
+    # --- A. 全帳號即時水額計算 ---
     meta_all_time_list = fetch_meta_ads_data(is_all_time=True)
     df_meta_all_time = get_ads_data_safely(meta_all_time_list)
     meta_total_spent_all_time = df_meta_all_time["花費 (TWD)"].sum() if not df_meta_all_time.empty else 0.0
     
-    # 平台即時剩餘計算
     meta_remaining = st.session_state.meta_account_limit - meta_total_spent_all_time
-    google_remaining = st.session_state.google_account_limit - 0.0  # Google 已扣花費 (目前佔位)
+    google_remaining = st.session_state.google_account_limit - 0.0
     total_remaining = meta_remaining + google_remaining
 
-    # --- B. 計算「選擇日期區間數據」(受日期選單影響) ---
+    # 🟢 計算未配給專案的預算水額
+    total_platform_limit = st.session_state.meta_account_limit + st.session_state.google_account_limit
+    total_allocated_budget = sum(st.session_state.project_budgets.values())
+    unallocated_budget = total_platform_limit - total_allocated_budget
+
+    # --- B. 指定區間花費計算 ---
     meta_range_list = fetch_meta_ads_data(start_date=start_d, end_date=end_d)
     df_ads_range = get_ads_data_safely(meta_range_list)
     
@@ -178,17 +174,18 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
         st.toast(f"✅ 成功從 Meta 讀取到 {len(df_ads_range)} 筆區間廣告資料！", icon="📡")
         
     meta_range_spend = df_ads_range["花費 (TWD)"].sum() if not df_ads_range.empty else 0.0
-    google_range_spend = 0.0  # Google 區間花費 (目前佔位)
+    google_range_spend = 0.0
     total_range_spend = meta_range_spend + google_range_spend
 
     # ==========================================
-    # 呈現區塊 1：⚡ 即時帳號剩餘水額
+    # 呈現區塊 1：⚡ 即時帳號剩餘水額與未分配預算
     # ==========================================
-    st.subheader("⚡ 即時帳號剩餘水額 (代理商上限金額 - 全時段累積花費)")
-    r1, r2, r3 = st.columns(3)
-    r1.metric("雙平台總剩餘可用預算", f"${total_remaining:,.0f} TWD")
-    r2.metric("Meta Ads 剩餘可用預算", f"${meta_remaining:,.0f} TWD", help=f"帳號上限: ${st.session_state.meta_account_limit:,.0f}")
-    r3.metric("Google Ads 剩餘可用預算", f"${google_remaining:,.0f} TWD", help=f"帳號上限: ${st.session_state.google_account_limit:,.0f}")
+    st.subheader("⚡ 即時帳號水額概況 (代理商開立額度 - 全時段花費)")
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("雙平台總剩餘可用水額", f"${total_remaining:,.0f} TWD")
+    r2.metric("Meta Ads 剩餘可用水額", f"${meta_remaining:,.0f} TWD")
+    r3.metric("Google Ads 剩餘可用水額", f"${google_remaining:,.0f} TWD")
+    r4.metric("雙平台尚未分配專案水額", f"${unallocated_budget:,.0f} TWD", help="代理商總額度 - 各專案已規劃預算總和")
 
     st.divider()
 
@@ -210,7 +207,6 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     with col_title:
         st.markdown("### 🎯 各專案目標預算與區間花費明細")
     
-    # 專案歸類處理
     if not df_ads_range.empty:
         df_ads_range["歸類專案"] = df_ads_range["廣告名稱"].apply(lambda x: classify_ad(x, st.session_state.keyword_map))
         df_spend = df_ads_range.groupby("歸類專案")["花費 (TWD)"].sum().reset_index()
@@ -222,7 +218,6 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     df_main.rename(columns={"花費 (TWD)": "區間實際花費 (TWD)"}, inplace=True)
     df_main["預算結餘/透支 (TWD)"] = df_main["目標規劃預算 (TWD)"] - df_main["區間實際花費 (TWD)"]
     
-    # Excel 匯出
     with col_btn:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
