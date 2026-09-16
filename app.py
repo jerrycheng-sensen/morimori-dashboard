@@ -29,17 +29,24 @@ def style_balance_color(val):
 # ==========================================
 # 1. 頁面配置與 Session State 初始化
 # ==========================================
-st.set_page_config(page_title="morimori - 廣告預算儀表板", layout="wide")
-st.title("🥩 morimori - 廣告預算與可用預算即時儀表板")
+st.set_page_config(page_title="森森燒肉 - 廣告預算儀表板", layout="wide")
 
-# 1. 平台額度上限
+# 1. 側邊欄 Logo 上傳功能
+uploaded_logo = st.sidebar.file_uploader("🖼️ 上傳品牌 Logo", type=["png", "jpg", "jpeg"])
+if uploaded_logo:
+    st.sidebar.image(uploaded_logo, use_container_width=True)
+
+# 2. 正式主標題 (已更名為森森燒肉並移除肉類 icon)
+st.title("森森燒肉 - 廣告預算與可用預算即時儀表板")
+
+# 3. 平台額度上限
 if "meta_account_limit" not in st.session_state:
     st.session_state.meta_account_limit = 198500.0
 
 if "google_account_limit" not in st.session_state:
     st.session_state.google_account_limit = 0.0
 
-# 2. 關鍵字歸類規則
+# 4. 關鍵字歸類規則
 if "keyword_map" not in st.session_state:
     st.session_state.keyword_map = {
         "林口": "林口店開幕專案",
@@ -47,7 +54,7 @@ if "keyword_map" not in st.session_state:
         "森鑽": "森鑽卡宣傳專案"
     }
 
-# 3. 各專案規劃預算
+# 5. 各專案規劃預算
 if "project_budgets" not in st.session_state:
     st.session_state.project_budgets = {
         "林口店開幕專案": 60000.0,
@@ -56,7 +63,7 @@ if "project_budgets" not in st.session_state:
         "其他/未歸類專案": 0.0
     }
 
-# 4. 專案狀態 (進行中 / 已結案)
+# 6. 專案狀態 (進行中 / 已結案)
 if "project_status" not in st.session_state:
     st.session_state.project_status = {
         "林口店開幕專案": "進行中",
@@ -141,7 +148,7 @@ if auto_spend_cap and auto_spend_cap > 0:
     st.session_state.meta_account_limit = auto_spend_cap
 
 # ==========================================
-# 3. 側邊欄控制項 (前台維護專案狀態)
+# 3. 側邊欄控制項 (狀態管理與按鈕控制)
 # ==========================================
 st.sidebar.header("⚙️ 儀表板控制台")
 today = datetime.today()
@@ -176,24 +183,31 @@ with st.sidebar.expander("🛠️ 前台專案與關鍵字管理台", expanded=T
 
     st.markdown("---")
     
-    st.markdown("**3️⃣ 編輯專案狀態 / 刪除專案**")
-    with st.form("manage_project_form", clear_on_submit=True):
+    # 🟢 專案狀態按鈕切換與刪除區塊
+    st.markdown("**3️⃣ 專案狀態切換與管理**")
+    with st.form("manage_project_form"):
         edit_proj_list = [p for p in st.session_state.project_budgets.keys() if p != "其他/未歸類專案"]
-        selected_proj = st.selectbox("選擇管理專案", edit_proj_list if edit_proj_list else ["無可管理專案"])
-        updated_status = st.radio("變更專案狀態", ["進行中", "已結案"], horizontal=True)
+        selected_proj = st.selectbox("選擇要變更的專案", edit_proj_list if edit_proj_list else ["無可管理專案"])
+        
+        current_st = st.session_state.project_status.get(selected_proj, "進行中")
+        st.caption(f"當前專案狀態：**{current_st}**")
+        
+        updated_status = st.radio("切換狀態為：", ["進行中", "已結案"], horizontal=True)
         col_m1, col_m2 = st.columns(2)
-        btn_update_status = col_m1.form_submit_button("💾 更新狀態")
+        btn_update_status = col_m1.form_submit_button("💾 儲存狀態")
         btn_del_proj = col_m2.form_submit_button("🗑️ 刪除專案")
         
         if btn_update_status and selected_proj in st.session_state.project_status:
             st.session_state.project_status[selected_proj] = updated_status
-            st.success(f"✅ 專案【{selected_proj}】已切換為：{updated_status}")
+            st.success(f"✅ 專案【{selected_proj}】狀態已更新為：{updated_status}")
+            st.rerun()
             
         if btn_del_proj and selected_proj in st.session_state.project_budgets:
             del st.session_state.project_budgets[selected_proj]
             del st.session_state.project_status[selected_proj]
             st.session_state.keyword_map = {k: v for k, v in st.session_state.keyword_map.items() if v != selected_proj}
             st.success(f"🗑️ 已刪除專案：{selected_proj}")
+            st.rerun()
 
 # ==========================================
 # 4. 主畫面呈現：頂部卡片與頁籤分流
@@ -242,13 +256,12 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     # ==========================================
     tab_all, tab_range = st.tabs(["📊 歷年專案總覽 (全時段)", "📅 指定區間花費分析"])
 
-    # 🟢 頁籤 1：歷年專案總覽 (全時段)
+    # 🟢 頁籤 1：歷年專案總覽 (全時段格式修復)
     with tab_all:
         col_t1, col_b1 = st.columns([4, 1])
         with col_t1:
             st.markdown("### 🏆 歷年專案總體執行概況 (包含執行率與狀態)")
             
-        # 全時段數據歸類計算
         if not df_meta_all_time.empty:
             df_meta_all_time["歸類專案"] = df_meta_all_time["廣告名稱"].apply(lambda x: classify_ad(x, st.session_state.keyword_map))
             df_all_spend = df_meta_all_time.groupby("歸類專案")["花費 (TWD)"].sum().reset_index()
@@ -259,17 +272,14 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
         df_all_view = pd.merge(df_all_view, df_all_spend, on="歸類專案", how="left").fillna(0)
         df_all_view.rename(columns={"花費 (TWD)": "全時段總花費 (TWD)"}, inplace=True)
         
-        # 關鍵指標計算
         df_all_view["全時段結餘/透支 (TWD)"] = df_all_view["目標規劃預算 (TWD)"] - df_all_view["全時段總花費 (TWD)"]
         df_all_view["預算執行率 (%)"] = df_all_view.apply(
-            lambda r: round((r["全時段總花費 (TWD)"] / r["目標規劃預算 (TWD)"] * 100), 1) if r["目標規劃預算 (TWD)"] > 0 else 0.0, axis=1
+            lambda r: (r["全時段總花費 (TWD)"] / r["目標規劃預算 (TWD)"] * 100) if r["目標規劃預算 (TWD)"] > 0 else 0.0, axis=1
         )
         df_all_view["專案狀態"] = df_all_view["歸類專案"].map(st.session_state.project_status).fillna("進行中")
         
-        # 調整欄位排序
         df_all_view = df_all_view[["歸類專案", "專案狀態", "目標規劃預算 (TWD)", "全時段總花費 (TWD)", "預算執行率 (%)", "全時段結餘/透支 (TWD)"]]
 
-        # 匯出按鈕
         with col_b1:
             buffer_all = io.BytesIO()
             with pd.ExcelWriter(buffer_all, engine='openpyxl') as writer:
@@ -277,15 +287,24 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
             st.download_button(
                 label="📊 下載歷年報表",
                 data=buffer_all.getvalue(),
-                file_name="morimori_歷年專案總覽報表.xlsx",
+                file_name="森森燒肉_歷年專案總覽報表.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-        # 🟢 Pandas Styler：結餘 > 0 綠字、< 0 紅字著色
-        styled_df_all = df_all_view.style.map(style_balance_color, subset=["全時段結餘/透支 (TWD)"])
+        # 🟢 關鍵格式化修正：帶入 format 徹底去除 .000000 雜訊，呈現乾淨數值與 %
+        styled_df_all = (
+            df_all_view.style
+            .format({
+                "目標規劃預算 (TWD)": "${:,.0f}",
+                "全時段總花費 (TWD)": "${:,.0f}",
+                "預算執行率 (%)": "{:.1f}%",
+                "全時段結餘/透支 (TWD)": "${:,.0f}"
+            })
+            .map(style_balance_color, subset=["全時段結餘/透支 (TWD)"])
+        )
         st.dataframe(styled_df_all, use_container_width=True, hide_index=True)
 
-    # 🟢 頁籤 2：指定區間花費分析
+    # 🟢 頁籤 2：指定區間花費分析 (格式修復)
     with tab_range:
         st.markdown(f"### 📅 指定區間花費概況 ({start_d} 至 {end_d})")
         d1, d2, d3 = st.columns(3)
@@ -309,5 +328,13 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
         
         df_range_view = df_range_view[["歸類專案", "專案狀態", "目標規劃預算 (TWD)", "區間實際花費 (TWD)", "區間剩餘/透支 (TWD)"]]
 
-        styled_df_range = df_range_view.style.map(style_balance_color, subset=["區間剩餘/透支 (TWD)"])
+        styled_df_range = (
+            df_range_view.style
+            .format({
+                "目標規劃預算 (TWD)": "${:,.0f}",
+                "區間實際花費 (TWD)": "${:,.0f}",
+                "區間剩餘/透支 (TWD)": "${:,.0f}"
+            })
+            .map(style_balance_color, subset=["區間剩餘/透支 (TWD)"])
+        )
         st.dataframe(styled_df_range, use_container_width=True, hide_index=True)
