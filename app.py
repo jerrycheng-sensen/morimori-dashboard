@@ -27,7 +27,7 @@ def style_balance_color(val):
     return ''
 
 # ==========================================
-# 1. 頁面配置與 Logo / 主標題佈局
+# 1. 頁面配置與 Logo (加大版) / 主標題佈局
 # ==========================================
 st.set_page_config(page_title="森森燒肉 - 廣告預算儀表板", layout="wide")
 
@@ -35,11 +35,11 @@ st.set_page_config(page_title="森森燒肉 - 廣告預算儀表板", layout="wi
 with st.sidebar.expander("🖼️ 上傳品牌 Logo", expanded=False):
     uploaded_logo = st.file_uploader("選擇 Logo 圖片 (PNG/JPG)", type=["png", "jpg", "jpeg"], key="logo_upload")
 
-# 🟢 2. 主標題與 Logo 橫向並排佈局
+# 🟢 2. 主標題與放大版 Logo 橫向並排佈局 (寬度加大至 220px)
 if uploaded_logo:
-    col_logo, col_title = st.columns([1, 6])
+    col_logo, col_title = st.columns([1, 4])
     with col_logo:
-        st.image(uploaded_logo, width=110)
+        st.image(uploaded_logo, width=220)  # 加大 Logo 尺寸
     with col_title:
         st.title("森森燒肉 - 廣告預算與可用預算即時儀表板")
 else:
@@ -79,7 +79,7 @@ if "project_status" not in st.session_state:
     }
 
 # ==========================================
-# 2. Meta API 數據抓取邏輯 (修復全時段數據)
+# 2. Meta API 數據抓取邏輯 (修復全時段歷史資料)
 # ==========================================
 def fetch_meta_account_spend_cap():
     """向 Meta API 查詢廣告帳號後台設定的「帳號花費上限 (spend_cap)」"""
@@ -118,10 +118,9 @@ def fetch_meta_ads_data(start_date=None, end_date=None, is_all_time=False):
         "limit": 500
     }
     
-    # 🟢 修正關鍵：全時段改用廣域日期 range (2020 年至今)，避免 date_preset="maximum" API 空包彈問題
+    # 🟢 修復重點：全時段改回 date_preset="maximum"，符合 Meta Marketing API 規範且不超出 37 個月限制
     if is_all_time:
-        today_str = datetime.today().strftime("%Y-%m-%d")
-        params["time_range"] = json.dumps({"since": "2020-01-01", "until": today_str})
+        params["date_preset"] = "maximum"
     elif start_date and end_date:
         since_str = start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else str(start_date)
         until_str = end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else str(end_date)
@@ -263,7 +262,7 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     # ==========================================
     tab_all, tab_range = st.tabs(["📊 歷年專案總覽 (全時段)", "📅 指定區間花費分析"])
 
-    # 🟢 頁籤 1：歷年專案總覽 (全時段花費與執行率計算)
+    # 🟢 頁籤 1：歷年專案總覽 (修復全時段總花費與執行率 %)
     with tab_all:
         col_t1, col_b1 = st.columns([4, 1])
         with col_t1:
@@ -298,6 +297,7 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
+        # 🟢 清晰無雜訊格式化 (帶出正確歷史花費與百分比)
         styled_df_all = (
             df_all_view.style
             .format({
