@@ -3,7 +3,7 @@ import json
 import requests
 import pandas as pd
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ==========================================
 # 0. 輔助函式與顏色著色邏輯
@@ -27,7 +27,7 @@ def style_balance_color(val):
     return ''
 
 # ==========================================
-# 1. 頁面配置與 Logo (加大版) / 主標題佈局
+# 1. 頁面配置與 Logo (右置放大版) / 主標題佈局
 # ==========================================
 st.set_page_config(page_title="森森燒肉 - 廣告預算儀表板", layout="wide")
 
@@ -35,13 +35,13 @@ st.set_page_config(page_title="森森燒肉 - 廣告預算儀表板", layout="wi
 with st.sidebar.expander("🖼️ 上傳品牌 Logo", expanded=False):
     uploaded_logo = st.file_uploader("選擇 Logo 圖片 (PNG/JPG)", type=["png", "jpg", "jpeg"], key="logo_upload")
 
-# 🟢 2. 主標題與放大版 Logo 橫向並排佈局 (寬度加大至 220px)
+# 🟢 2. 主標題與右置放大版 Logo 橫向並排佈局 (Logo 放置於右側欄位，寬度 280px)
 if uploaded_logo:
-    col_logo, col_title = st.columns([1, 4])
-    with col_logo:
-        st.image(uploaded_logo, width=220)  # 加大 Logo 尺寸
+    col_title, col_logo = st.columns([5, 2])
     with col_title:
         st.title("森森燒肉 - 廣告預算與可用預算即時儀表板")
+    with col_logo:
+        st.image(uploaded_logo, width=280)  # 放右邊並放大 Logo
 else:
     st.title("森森燒肉 - 廣告預算與可用預算即時儀表板")
 
@@ -79,7 +79,7 @@ if "project_status" not in st.session_state:
     }
 
 # ==========================================
-# 2. Meta API 數據抓取邏輯 (修復全時段歷史資料)
+# 2. Meta API 數據抓取邏輯 (徹底修復歷史資料)
 # ==========================================
 def fetch_meta_account_spend_cap():
     """向 Meta API 查詢廣告帳號後台設定的「帳號花費上限 (spend_cap)」"""
@@ -103,6 +103,9 @@ def fetch_meta_account_spend_cap():
     return None
 
 def fetch_meta_ads_data(start_date=None, end_date=None, is_all_time=False):
+    """
+    程式碼作用：向 Meta API 抓取廣告資料 (具備自動報錯與 30 個月安全歷史範圍)
+    """
     if "meta_access_token" not in st.secrets or "meta_ad_account_id" not in st.secrets:
         return []
         
@@ -118,9 +121,11 @@ def fetch_meta_ads_data(start_date=None, end_date=None, is_all_time=False):
         "limit": 500
     }
     
-    # 🟢 修復重點：全時段改回 date_preset="maximum"，符合 Meta Marketing API 規範且不超出 37 個月限制
+    # 🟢 關鍵修復：全時段採用動態 900 天 (約 30 個月)，絕對符合 Meta < 37 個月規定，且不跳空包彈
     if is_all_time:
-        params["date_preset"] = "maximum"
+        since_date = datetime.today() - timedelta(days=900)
+        today_str = datetime.today().strftime("%Y-%m-%d")
+        params["time_range"] = json.dumps({"since": since_date.strftime("%Y-%m-%d"), "until": today_str})
     elif start_date and end_date:
         since_str = start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else str(start_date)
         until_str = end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else str(end_date)
@@ -129,7 +134,11 @@ def fetch_meta_ads_data(start_date=None, end_date=None, is_all_time=False):
     try:
         response = requests.get(url, params=params, timeout=10)
         res_data = response.json()
+        
+        # 🟢 主動印出 API 錯誤，避免除錯死角
         if "error" in res_data:
+            err_msg = res_data["error"].get("message", "未知 Meta API 錯誤")
+            st.error(f"⚠️ Meta API 回傳訊息：{err_msg}")
             return []
             
         ads_list = []
@@ -140,7 +149,8 @@ def fetch_meta_ads_data(start_date=None, end_date=None, is_all_time=False):
                 "花費 (TWD)": float(item.get("spend", 0.0))
             })
         return ads_list
-    except Exception:
+    except Exception as e:
+        st.error(f"❌ Meta API 連線失敗：{e}")
         return []
 
 def get_ads_data_safely(ads_list):
@@ -262,7 +272,7 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     # ==========================================
     tab_all, tab_range = st.tabs(["📊 歷年專案總覽 (全時段)", "📅 指定區間花費分析"])
 
-    # 🟢 頁籤 1：歷年專案總覽 (修復全時段總花費與執行率 %)
+    # 🟢 頁籤 1：歷年專案總覽 (全時段花費與執行率計算)
     with tab_all:
         col_t1, col_b1 = st.columns([4, 1])
         with col_t1:
@@ -297,7 +307,6 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-        # 🟢 清晰無雜訊格式化 (帶出正確歷史花費與百分比)
         styled_df_all = (
             df_all_view.style
             .format({
