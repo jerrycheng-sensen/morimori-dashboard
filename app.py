@@ -20,46 +20,40 @@ def classify_ad(ad_name, keyword_map):
     return "其他/未歸類專案"
 
 # ==========================================
-# 1. 頁面配置與全域記憶體初始化
+# 1. 頁面配置與全域記憶體初始化 (已清理過期專案)
 # ==========================================
 st.set_page_config(page_title="morimori - 廣告預算儀表板", layout="wide")
 st.title("🥩 morimori - 廣告預算與可用預算即時儀表板")
 
-# 1. 代理商開立的平台額度上限 (預設備援值)
+# 1. 平台額度上限 (Google 預設歸零，避免虛增未分配預算)
 if "meta_account_limit" not in st.session_state:
-    st.session_state.meta_account_limit = 198500.0  # 預設與 Meta 後台同步
+    st.session_state.meta_account_limit = 198500.0
 
 if "google_account_limit" not in st.session_state:
-    st.session_state.google_account_limit = 150000.0  # Google 預設總額度上限
+    st.session_state.google_account_limit = 0.0  # 🟢 未串接 Google API 前預設為 0
 
-# 2. 專案關鍵字歸類規則 (寫入永久記憶庫)
+# 2. 專案關鍵字歸類規則 (僅保留運行中專案)
 if "keyword_map" not in st.session_state:
     st.session_state.keyword_map = {
         "林口": "林口店開幕專案",
-        "中秋": "中秋燒肉禮盒專案",
-        "常態": "品牌常態宣傳專案",
         "足球": "足球應援祭專案",
         "森鑽": "森鑽卡宣傳專案"
     }
 
-# 3. 各專案規劃預算
+# 3. 各專案規劃預算 (僅保留運行中專案，總和 198,500)
 if "project_budgets" not in st.session_state:
     st.session_state.project_budgets = {
         "林口店開幕專案": 60000.0,
-        "中秋燒肉禮盒專案": 50000.0,
-        "品牌常態宣傳專案": 80000.0,
         "足球應援祭專案": 60000.0,
         "森鑽卡宣傳專案": 78500.0,
         "其他/未歸類專案": 0.0
     }
 
 # ==========================================
-# 2. Meta API 數據抓取 (修正 spend_cap 換算單位)
+# 2. Meta API 數據抓取邏輯
 # ==========================================
 def fetch_meta_account_spend_cap():
-    """
-    程式碼作用：向 Meta API 查詢廣告帳號於後台設定的「帳號花費上限 (spend_cap)」
-    """
+    """向 Meta API 查詢廣告帳號後台設定的「帳號花費上限 (spend_cap)」"""
     if "meta_access_token" not in st.secrets or "meta_ad_account_id" not in st.secrets:
         return None
         
@@ -77,9 +71,7 @@ def fetch_meta_account_spend_cap():
         response = requests.get(url, params=params, timeout=10)
         res_data = response.json()
         if "spend_cap" in res_data:
-            # 🟢 修正 Bug：Meta API 台幣 spend_cap 即為整數金額，無須除以 100
-            cap_twd = float(res_data["spend_cap"])
-            return cap_twd
+            return float(res_data["spend_cap"])
     except Exception:
         pass
     return None
@@ -139,7 +131,7 @@ if auto_spend_cap and auto_spend_cap > 0:
     st.session_state.meta_account_limit = auto_spend_cap
 
 # ==========================================
-# 4. 側邊欄控制項 (已移除手動上限設定欄位)
+# 4. 側邊欄控制項 (新增前台刪除專案功能)
 # ==========================================
 st.sidebar.header("⚙️ 儀表板控制台")
 today = datetime.today()
@@ -148,7 +140,7 @@ date_range = st.sidebar.date_input("查詢日期區間：", value=(first_day, to
 
 st.sidebar.divider()
 
-# 簡化後的專案與關鍵字管理
+# 前台專案與關鍵字管理
 with st.sidebar.expander("🛠️ 前台專案與關鍵字管理台", expanded=True):
     
     st.markdown("**1️⃣ 建立新專案與目標預算**")
@@ -171,6 +163,20 @@ with st.sidebar.expander("🛠️ 前台專案與關鍵字管理台", expanded=T
             st.session_state.keyword_map[new_kw] = target_proj
             st.success(f"✅ 規則已生效：含「{new_kw}」自動歸類至【{target_proj}】")
 
+    st.markdown("---")
+    
+    # 🟢 新增：前台刪除專案表單
+    st.markdown("**3️⃣ 刪除已結案專案**")
+    with st.form("delete_project_form", clear_on_submit=True):
+        del_proj_list = [p for p in st.session_state.project_budgets.keys() if p != "其他/未歸類專案"]
+        del_target = st.selectbox("選擇要刪除的專案", del_proj_list if del_proj_list else ["無可刪除專案"])
+        btn_del_proj = st.form_submit_button("🗑️ 刪除專案")
+        if btn_del_proj and del_target and del_target in st.session_state.project_budgets:
+            del st.session_state.project_budgets[del_target]
+            # 同時清理相關關鍵字綁定
+            st.session_state.keyword_map = {k: v for k, v in st.session_state.keyword_map.items() if v != del_target}
+            st.success(f"🗑️ 已刪除專案：{del_target}")
+
 # ==========================================
 # 5. 主畫面呈現：雙區塊數據與指標面板
 # ==========================================
@@ -186,7 +192,7 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     google_remaining = st.session_state.google_account_limit - 0.0
     total_remaining = meta_remaining + google_remaining
 
-    # 計算未分配至專案的預算金額 (雙平台總額度 - 已規劃專案預算)
+    # 計算未分配至專案的預算金額
     total_platform_limit = st.session_state.meta_account_limit + st.session_state.google_account_limit
     total_allocated_budget = sum(st.session_state.project_budgets.values())
     unallocated_budget = total_platform_limit - total_allocated_budget
