@@ -1,7 +1,21 @@
-import streamlit as st
-import pandas as pd
-from datetime import datetime
 import io
+import json
+import requests
+import pandas as pd
+import streamlit as st
+from datetime import datetime
+
+# ==========================================
+# 0. 輔助函式：廣告名稱歸類 (補齊遺漏的函式)
+# ==========================================
+def classify_ad(ad_name, keyword_map):
+    """
+    程式碼作用：根據廣告名稱中的關鍵字，自動將花費歸類到對應的專案
+    """
+    for kw, proj in keyword_map.items():
+        if kw in ad_name:
+            return proj
+    return "其他/未歸類專案"
 
 # ==========================================
 # 1. 頁面配置與全域記憶體初始化 (展示模式)
@@ -31,18 +45,13 @@ if "deposit_logs" not in st.session_state:
         {"儲值日期": "2026-08-15", "歸屬專案": "中秋燒肉禮盒專案", "儲值金額 (TWD)": 50000.0, "備註": "節慶加碼預算"},
     ]
 
-import json
-import requests
-import pandas as pd
-import streamlit as st
 
 # ==========================================
-# 2. 廣告數據處理邏輯 (Meta API 精準修正版)
+# 2. 廣告數據處理邏輯 (API 穩健防呆版)
 # ==========================================
-
 def fetch_meta_ads_data(start_date, end_date):
     """
-    程式碼作用：向 Meta Marketing API 請求指定日期區間的廣告名稱與花費
+    程式碼作用：向 Meta API 請求指定日期區間的廣告名稱與花費
     """
     if "meta_access_token" not in st.secrets or "meta_ad_account_id" not in st.secrets:
         return []
@@ -51,13 +60,13 @@ def fetch_meta_ads_data(start_date, end_date):
     account_id = str(st.secrets["meta_ad_account_id"]).strip()
     clean_id = account_id if account_id.startswith("act_") else f"act_{account_id}"
     
-    # 🟢 1. 日期格式化為標準 ISO 格式 (YYYY-MM-DD)
+    # 正確格式化日期為 YYYY-MM-DD
     since_str = start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else str(start_date)
     until_str = end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else str(end_date)
     
     url = f"https://graph.facebook.com/v19.0/{clean_id}/insights"
     
-    # 🟢 2. 使用 json.dumps 打包 time_range 避免字串編碼錯誤
+    # 使用 json.dumps 正確序列化 time_range
     params = {
         "access_token": token,
         "level": "ad",
@@ -70,9 +79,9 @@ def fetch_meta_ads_data(start_date, end_date):
         response = requests.get(url, params=params, timeout=10)
         res_data = response.json()
         
-        # 🟢 3. 若 Meta 回傳 API 錯誤，直接在畫面上印出除錯訊息
+        # 若 Meta API 回傳錯誤訊息，直接在網頁畫面上呈現
         if "error" in res_data:
-            err_msg = res_data["error"].get("message", "未知 API 錯誤")
+            err_msg = res_data["error"].get("message", "未知 Meta API 錯誤")
             st.error(f"⚠️ Meta API 回傳錯誤：{err_msg}")
             return []
             
@@ -92,7 +101,7 @@ def fetch_meta_ads_data(start_date, end_date):
 
 def fetch_ad_data(start_date=None, end_date=None):
     """
-    程式碼作用：整合 API 資料與備用資料，保證 DataFrame 結構完整
+    程式碼作用：整合 API 資料並確保回傳之 DataFrame 格式完美
     """
     has_meta_key = "meta_access_token" in st.secrets and "meta_ad_account_id" in st.secrets
     
@@ -103,14 +112,14 @@ def fetch_ad_data(start_date=None, end_date=None):
         if not df_ads.empty:
             st.toast(f"✅ 成功從 Meta 讀取到 {len(df_ads)} 筆廣告資料！", icon="📡")
     else:
-        # 未設定 Key 時的測試用模擬假資料
+        # 測試用預設資料
         ads_list = [
             {"平台": "Meta", "廣告名稱": "【森森燒肉】林口店開幕優惠_FB粉專", "花費 (TWD)": 15000.0},
             {"平台": "Google", "廣告名稱": "【森森燒肉】品牌關鍵字_搜尋廣告", "花費 (TWD)": 12000.0}
         ]
         df_ads = pd.DataFrame(ads_list)
 
-    # 🟢 4. 關鍵欄位保險：即便無資料也強行補齊必要欄位
+    # 全域欄位保險：即使無資料也強制填補必要欄位
     if df_ads.empty or "廣告名稱" not in df_ads.columns:
         df_ads = pd.DataFrame(columns=["平台", "廣告名稱", "花費 (TWD)"])
 
@@ -118,8 +127,9 @@ def fetch_ad_data(start_date=None, end_date=None):
     google_limit = 150000.0
     
     return meta_limit, google_limit, df_ads
+
 # ==========================================
-# 3. 側邊欄控制項與儲值表單 (無錯誤提示版)
+# 3. 側邊欄控制項與儲值表單
 # ==========================================
 st.sidebar.header("⚙️ 儀表板控制台")
 
@@ -135,7 +145,6 @@ with st.sidebar.form("deposit_form", clear_on_submit=True):
     d_proj = st.selectbox("歸屬專案", list(st.session_state.project_budgets.keys()))
     d_amount = st.number_input("儲值金額 (TWD)", min_value=0.0, step=10000.0)
     d_note = st.text_input("備註說明", value="")
-    # 按鈕文字改為更符合現狀的描述
     submitted = st.form_submit_button("➕ 寫入系統並更新圖表")
 
 if submitted and d_amount > 0:
@@ -145,20 +154,24 @@ if submitted and d_amount > 0:
         "儲值金額 (TWD)": d_amount,
         "備註": d_note
     })
-    # 給予正向的使用者回饋，並提醒可以使用 Excel 匯出
     st.sidebar.success(f"✅ 已成功記錄：{d_proj} 儲值 ${d_amount:,.0f}")
     st.sidebar.info("💡 提示：本次變更已更新至圖表，可透過右方「下載 Excel 報表」按鈕匯出留存。")
 
 # ==========================================
-# 4. 主畫面呈現與 Excel 報表下載
+# 4. 主畫面呈現與 Excel 報表下載 (加上了最新防呆保護)
 # ==========================================
 if isinstance(date_range, tuple) and len(date_range) == 2:
     start_d, end_d = date_range
     meta_limit, google_limit, df_ads = fetch_ad_data(start_d, end_d)
     total_deposit_limit = meta_limit + google_limit
     
-    df_ads["歸類專案"] = df_ads["廣告名稱"].apply(lambda x: classify_ad(x, st.session_state.keyword_map))
-    df_spend = df_ads.groupby("歸類專案")["花費 (TWD)"].sum().reset_index()
+    # 🟢 關鍵防護網：確認資料表非空，才進行「廣告名稱」分類，徹底杜絕 KeyError
+    if not df_ads.empty and "廣告名稱" in df_ads.columns:
+        df_ads["歸類專案"] = df_ads["廣告名稱"].apply(lambda x: classify_ad(x, st.session_state.keyword_map))
+    else:
+        df_ads["歸類專案"] = pd.Series(dtype=str)
+        
+    df_spend = df_ads.groupby("歸類專案")["花費 (TWD)"].sum().reset_index() if not df_ads.empty else pd.DataFrame(columns=["歸類專案", "花費 (TWD)"])
     
     df_deposits = pd.DataFrame(st.session_state.deposit_logs)
     df_dep_sum = df_deposits.groupby("歸屬專案")["儲值金額 (TWD)"].sum().reset_index() if not df_deposits.empty else pd.DataFrame(columns=["歸屬專案", "儲值金額 (TWD)"])
