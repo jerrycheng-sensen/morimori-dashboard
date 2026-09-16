@@ -31,56 +31,93 @@ if "deposit_logs" not in st.session_state:
         {"儲值日期": "2026-08-15", "歸屬專案": "中秋燒肉禮盒專案", "儲值金額 (TWD)": 50000.0, "備註": "節慶加碼預算"},
     ]
 
+import json
+import requests
+import pandas as pd
+import streamlit as st
+
 # ==========================================
-# 2. 廣告數據處理邏輯 (API 數據集中處理區塊)
+# 2. 廣告數據處理邏輯 (Meta API 精準修正版)
 # ==========================================
 
-@st.cache_data(ttl=1800)
+def fetch_meta_ads_data(start_date, end_date):
+    """
+    程式碼作用：向 Meta Marketing API 請求指定日期區間的廣告名稱與花費
+    """
+    if "meta_access_token" not in st.secrets or "meta_ad_account_id" not in st.secrets:
+        return []
+        
+    token = st.secrets["meta_access_token"]
+    account_id = str(st.secrets["meta_ad_account_id"]).strip()
+    clean_id = account_id if account_id.startswith("act_") else f"act_{account_id}"
+    
+    # 🟢 1. 日期格式化為標準 ISO 格式 (YYYY-MM-DD)
+    since_str = start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else str(start_date)
+    until_str = end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else str(end_date)
+    
+    url = f"https://graph.facebook.com/v19.0/{clean_id}/insights"
+    
+    # 🟢 2. 使用 json.dumps 打包 time_range 避免字串編碼錯誤
+    params = {
+        "access_token": token,
+        "level": "ad",
+        "fields": "ad_name,spend",
+        "time_range": json.dumps({"since": since_str, "until": until_str}),
+        "limit": 500
+    }
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        res_data = response.json()
+        
+        # 🟢 3. 若 Meta 回傳 API 錯誤，直接在畫面上印出除錯訊息
+        if "error" in res_data:
+            err_msg = res_data["error"].get("message", "未知 API 錯誤")
+            st.error(f"⚠️ Meta API 回傳錯誤：{err_msg}")
+            return []
+            
+        ads_list = []
+        for item in res_data.get("data", []):
+            ads_list.append({
+                "平台": "Meta",
+                "廣告名稱": item.get("ad_name", "未命名廣告"),
+                "花費 (TWD)": float(item.get("spend", 0.0))
+            })
+        return ads_list
+        
+    except Exception as e:
+        st.error(f"❌ Meta API 網路連線失敗：{e}")
+        return []
+
+
 def fetch_ad_data(start_date=None, end_date=None):
     """
-    【定位說明】：未來修改或接入 Meta/Google API，只需要在此函式內編輯！
-    【運作邏輯】：
-    1. 若未偵測到 Secrets 金鑰，執行 else 區塊載入預設 DataFrame。
-    2. 回傳資料格式固定為：(Meta上限, Google上限, 廣告明細DataFrame)
+    程式碼作用：整合 API 資料與備用資料，保證 DataFrame 結構完整
     """
-    # 判斷是否已在 Streamlit Secrets 設定金鑰
-    has_meta_key = "meta_access_token" in st.secrets
-    has_google_key = "google_developer_token" in st.secrets
+    has_meta_key = "meta_access_token" in st.secrets and "meta_ad_account_id" in st.secrets
     
-    if has_meta_key or has_google_key:
-        # --------------------------------------------------
-        # 未來真實 API 串接區 (金鑰設定後自動觸發)
-        # --------------------------------------------------
-        real_ads = []
-        # 此處會執行 requests.get() 向 Meta/Google 伺服器請求資料
-        # 並將結果 append 至 real_ads 陣列中
+    if has_meta_key and start_date and end_date:
+        ads_list = fetch_meta_ads_data(start_date, end_date)
+        df_ads = pd.DataFrame(ads_list)
         
-        meta_limit = 200000.0
-        google_limit = 180000.0
-        return meta_limit, google_limit, pd.DataFrame(real_ads)
+        if not df_ads.empty:
+            st.toast(f"✅ 成功從 Meta 讀取到 {len(df_ads)} 筆廣告資料！", icon="📡")
     else:
-        # --------------------------------------------------
-        # 目前驗證區 (無金鑰時使用，格式與真實 API 完全對齊)
-        # --------------------------------------------------
-        meta_limit = 198500.0
-        google_limit = 166252.0
-        raw_ads = [
-            {"平台": "Meta", "廣告名稱": "2026_林口店開幕_FB新選單推廣_v1", "花費 (TWD)": 65000},
-            {"平台": "Meta", "廣告名稱": "2026_林口店開幕_IG肉品優惠_v2", "花費 (TWD)": 42000},
-            {"平台": "Meta", "廣告名稱": "2026_中秋禮盒_預購單圖廣告", "花費 (TWD)": 22000},
-            {"平台": "Google", "廣告名稱": "Search_關鍵字_林口燒肉推薦", "花費 (TWD)": 10000},
-            {"平台": "Google", "廣告名稱": "PMax_全台門市_常態品牌宣傳", "花費 (TWD)": 50000},
+        # 未設定 Key 時的測試用模擬假資料
+        ads_list = [
+            {"平台": "Meta", "廣告名稱": "【森森燒肉】林口店開幕優惠_FB粉專", "花費 (TWD)": 15000.0},
+            {"平台": "Google", "廣告名稱": "【森森燒肉】品牌關鍵字_搜尋廣告", "花費 (TWD)": 12000.0}
         ]
-        # 回傳標準化的 DataFrame 供第 4 區塊繪製儀表板
-        return meta_limit, google_limit, pd.DataFrame(raw_ads)
+        df_ads = pd.DataFrame(ads_list)
 
-def classify_ad(ad_name, mapping):
-    """根據關鍵字字典，自動將廣告名稱歸類至對應的專案"""
-    for kw, proj in mapping.items():
-        if kw and kw in ad_name:
-            return proj
-    return "其他/未歸類專案"
+    # 🟢 4. 關鍵欄位保險：即便無資料也強行補齊必要欄位
+    if df_ads.empty or "廣告名稱" not in df_ads.columns:
+        df_ads = pd.DataFrame(columns=["平台", "廣告名稱", "花費 (TWD)"])
 
+    meta_limit = 200000.0
+    google_limit = 150000.0
+    
+    return meta_limit, google_limit, df_ads
 # ==========================================
 # 3. 側邊欄控制項與儲值表單 (無錯誤提示版)
 # ==========================================
