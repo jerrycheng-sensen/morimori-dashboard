@@ -23,11 +23,11 @@ def classify_ad(ad_name, keyword_map):
 # 1. 頁面配置與全域記憶體初始化
 # ==========================================
 st.set_page_config(page_title="morimori - 廣告預算儀表板", layout="wide")
-st.title("🥩 morimori - 廣告預算與水額即時儀表板")
+st.title("🥩 morimori - 廣告預算與可用預算即時儀表板")
 
 # 1. 代理商開立的平台額度上限 (預設備援值)
 if "meta_account_limit" not in st.session_state:
-    st.session_state.meta_account_limit = 198500.0  # 預設與圖片同步
+    st.session_state.meta_account_limit = 198500.0  # 預設與 Meta 後台同步
 
 if "google_account_limit" not in st.session_state:
     st.session_state.google_account_limit = 150000.0  # Google 預設總額度上限
@@ -54,11 +54,11 @@ if "project_budgets" not in st.session_state:
     }
 
 # ==========================================
-# 2. Meta API 數據抓取 (含 spend_cap 上限自動抓取)
+# 2. Meta API 數據抓取 (修正 spend_cap 換算單位)
 # ==========================================
 def fetch_meta_account_spend_cap():
     """
-    🟢 程式碼作用：向 Meta API 查詢該廣告帳號於後台設定的「帳號花費上限 (spend_cap)」
+    程式碼作用：向 Meta API 查詢廣告帳號於後台設定的「帳號花費上限 (spend_cap)」
     """
     if "meta_access_token" not in st.secrets or "meta_ad_account_id" not in st.secrets:
         return None
@@ -77,8 +77,8 @@ def fetch_meta_account_spend_cap():
         response = requests.get(url, params=params, timeout=10)
         res_data = response.json()
         if "spend_cap" in res_data:
-            # Meta API 回傳單位為「分」，除以 100 轉為 TWD 元
-            cap_twd = float(res_data["spend_cap"]) / 100.0
+            # 🟢 修正 Bug：Meta API 台幣 spend_cap 即為整數金額，無須除以 100
+            cap_twd = float(res_data["spend_cap"])
             return cap_twd
     except Exception:
         pass
@@ -132,14 +132,14 @@ def get_ads_data_safely(ads_list):
     return df
 
 # ==========================================
-# 3. 自動更新 Meta 帳號上限金額
+# 3. 自動讀取並同步 Meta 最新帳號上限
 # ==========================================
 auto_spend_cap = fetch_meta_account_spend_cap()
 if auto_spend_cap and auto_spend_cap > 0:
     st.session_state.meta_account_limit = auto_spend_cap
 
 # ==========================================
-# 4. 側邊欄控制項 (前台自主管理)
+# 4. 側邊欄控制項 (已移除手動上限設定欄位)
 # ==========================================
 st.sidebar.header("⚙️ 儀表板控制台")
 today = datetime.today()
@@ -148,22 +148,10 @@ date_range = st.sidebar.date_input("查詢日期區間：", value=(first_day, to
 
 st.sidebar.divider()
 
-with st.sidebar.expander("🛠️ 前台總額度與專案管理台", expanded=True):
+# 簡化後的專案與關鍵字管理
+with st.sidebar.expander("🛠️ 前台專案與關鍵字管理台", expanded=True):
     
-    st.markdown("**1️⃣ 代理商平台總額度設定**")
-    st.caption("💡 Meta 總額度已開啓 API 自動讀取後台「帳號花費上限」")
-    with st.form("limit_form"):
-        m_lim = st.number_input("Meta 帳號總額度 (TWD)", value=st.session_state.meta_account_limit, step=10000.0)
-        g_lim = st.number_input("Google 帳號總額度 (TWD)", value=st.session_state.google_account_limit, step=10000.0)
-        btn_save_lim = st.form_submit_button("💾 手動微調總額度")
-        if btn_save_lim:
-            st.session_state.meta_account_limit = m_lim
-            st.session_state.google_account_limit = g_lim
-            st.success("✅ 總額度已更新！")
-
-    st.markdown("---")
-    
-    st.markdown("**2️⃣ 建立新專案與目標預算**")
+    st.markdown("**1️⃣ 建立新專案與目標預算**")
     with st.form("add_project_form", clear_on_submit=True):
         new_proj_name = st.text_input("專案名稱", placeholder="例如：跨年檔期專案")
         new_proj_budget = st.number_input("目標規劃預算 (TWD)", min_value=0.0, step=10000.0)
@@ -174,7 +162,7 @@ with st.sidebar.expander("🛠️ 前台總額度與專案管理台", expanded=T
 
     st.markdown("---")
     
-    st.markdown("**3️⃣ 設定廣告名稱關鍵字歸類**")
+    st.markdown("**2️⃣ 設定廣告名稱關鍵字歸類**")
     with st.form("add_keyword_form", clear_on_submit=True):
         new_kw = st.text_input("廣告名稱關鍵字", placeholder="例如：跨年")
         target_proj = st.selectbox("自動歸類至專案", list(st.session_state.project_budgets.keys()), key="kw_target")
@@ -189,7 +177,7 @@ with st.sidebar.expander("🛠️ 前台總額度與專案管理台", expanded=T
 if isinstance(date_range, tuple) and len(date_range) == 2:
     start_d, end_d = date_range
     
-    # --- A. 全帳號即時水額計算 ---
+    # --- A. 全帳號即時可用預算計算 ---
     meta_all_time_list = fetch_meta_ads_data(is_all_time=True)
     df_meta_all_time = get_ads_data_safely(meta_all_time_list)
     meta_total_spent_all_time = df_meta_all_time["花費 (TWD)"].sum() if not df_meta_all_time.empty else 0.0
@@ -198,7 +186,7 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     google_remaining = st.session_state.google_account_limit - 0.0
     total_remaining = meta_remaining + google_remaining
 
-    # 計算未配給專案的預算水額
+    # 計算未分配至專案的預算金額 (雙平台總額度 - 已規劃專案預算)
     total_platform_limit = st.session_state.meta_account_limit + st.session_state.google_account_limit
     total_allocated_budget = sum(st.session_state.project_budgets.values())
     unallocated_budget = total_platform_limit - total_allocated_budget
@@ -215,14 +203,14 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     total_range_spend = meta_range_spend + google_range_spend
 
     # ==========================================
-    # 呈現區塊 1：⚡ 即時帳號剩餘水額與未分配預算
+    # 呈現區塊 1：⚡ 即時帳號可用預算概況
     # ==========================================
-    st.subheader("⚡ 即時帳號水額概況 (API 自動讀取後台額度上限 - 全時段花費)")
+    st.subheader("⚡ 即時帳號可用預算概況 (API 自動讀取後台額度上限 - 全時段花費)")
     r1, r2, r3, r4 = st.columns(4)
-    r1.metric("雙平台總剩餘可用水額", f"${total_remaining:,.0f} TWD")
-    r2.metric("Meta Ads 剩餘可用水額", f"${meta_remaining:,.0f} TWD", help=f"API 抓取最新後台上限: ${st.session_state.meta_account_limit:,.0f}")
-    r3.metric("Google Ads 剩餘可用水額", f"${google_remaining:,.0f} TWD", help=f"設定上限: ${st.session_state.google_account_limit:,.0f}")
-    r4.metric("雙平台尚未分配專案水額", f"${unallocated_budget:,.0f} TWD", help="代理商總額度 - 各專案已規劃預算總和")
+    r1.metric("雙平台總剩餘可用預算", f"${total_remaining:,.0f} TWD")
+    r2.metric("Meta Ads 剩餘可用預算", f"${meta_remaining:,.0f} TWD", help=f"API 自動讀取後台上限: ${st.session_state.meta_account_limit:,.0f}")
+    r3.metric("Google Ads 剩餘可用預算", f"${google_remaining:,.0f} TWD", help=f"設定上限: ${st.session_state.google_account_limit:,.0f}")
+    r4.metric("雙平台未分配專案預算", f"${unallocated_budget:,.0f} TWD", help="代理商總額度上限 - 各專案已規劃預算總和")
 
     st.divider()
 
