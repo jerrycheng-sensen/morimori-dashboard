@@ -20,29 +20,35 @@ def classify_ad(ad_name, keyword_map):
     return "其他/未歸類專案"
 
 # ==========================================
-# 1. 頁面配置與 Session State 初始化
+# 1. 頁面配置與全域記憶體初始化
 # ==========================================
 st.set_page_config(page_title="morimori - 廣告預算儀表板", layout="wide")
 st.title("🥩 morimori - 廣告預算與儲值即時儀表板")
 
+# 預設專案關鍵字規則
 if "keyword_map" not in st.session_state:
     st.session_state.keyword_map = {
         "林口": "林口店開幕專案",
         "中秋": "中秋燒肉禮盒專案",
-        "常態": "品牌常態宣傳專案"
+        "常態": "品牌常態宣傳專案",
+        "足球": "足球應援祭專案"
     }
 
+# 預設專案目標預算
 if "project_budgets" not in st.session_state:
     st.session_state.project_budgets = {
-        "林口店開幕專案": 100000.0,
+        "林口店開幕專案": 60000.0,
         "中秋燒肉禮盒專案": 50000.0,
         "品牌常態宣傳專案": 80000.0,
+        "足球應援祭專案": 60000.0,
         "其他/未歸類專案": 0.0
     }
 
+# 預設儲值流水帳
 if "deposit_logs" not in st.session_state:
     st.session_state.deposit_logs = [
-        {"儲值日期": "2026-08-01", "歸屬專案": "林口店開幕專案", "儲值金額 (TWD)": 100000.0, "備註": "代理商首筆代儲"},
+        {"儲值日期": "2026-06-01", "歸屬專案": "足球應援祭專案", "儲值金額 (TWD)": 60000.0, "備註": "足球應援祭代儲（已結案）"},
+        {"儲值日期": "2026-08-01", "歸屬專案": "林口店開幕專案", "儲值金額 (TWD)": 60000.0, "備註": "代理商首筆代儲"},
         {"儲值日期": "2026-08-15", "歸屬專案": "中秋燒肉禮盒專案", "儲值金額 (TWD)": 50000.0, "備註": "節慶加碼預算"},
     ]
 
@@ -73,7 +79,6 @@ def fetch_meta_ads_data(start_date, end_date):
         response = requests.get(url, params=params, timeout=10)
         res_data = response.json()
         
-        # 若 API 回傳錯誤，直接顯示警告，幫助排查
         if "error" in res_data:
             err_msg = res_data["error"].get("message", "未知 Meta API 錯誤")
             st.error(f"⚠️ Meta API 回傳錯誤：{err_msg}")
@@ -106,7 +111,6 @@ def fetch_ad_data(start_date=None, end_date=None):
         ]
         df_ads = pd.DataFrame(ads_list)
 
-    # 🟢 硬核防呆：無論如何都強行確保欄位存在，絕不讓 Pandas 報 KeyError
     if "廣告名稱" not in df_ads.columns:
         df_ads["廣告名稱"] = pd.Series(dtype=str)
     if "花費 (TWD)" not in df_ads.columns:
@@ -117,7 +121,7 @@ def fetch_ad_data(start_date=None, end_date=None):
     return 200000.0, 150000.0, df_ads
 
 # ==========================================
-# 3. 側邊欄控制項
+# 3. 側邊欄控制項 (前台動態管理介面)
 # ==========================================
 st.sidebar.header("⚙️ 儀表板控制台")
 today = datetime.today()
@@ -125,13 +129,41 @@ first_day = today.replace(day=1)
 date_range = st.sidebar.date_input("查詢日期區間：", value=(first_day, today), max_value=today)
 
 st.sidebar.divider()
+
+# 🟢 前台動態管理：新增專案與關鍵字
+with st.sidebar.expander("🛠️ 前台專案與歸類管理", expanded=False):
+    # 表單 1：新增全新專案
+    with st.form("add_project_form", clear_on_submit=True):
+        st.markdown("**1. 建立新專案與目標預算**")
+        new_proj_name = st.text_input("專案名稱", placeholder="例如：跨年檔期專案")
+        new_proj_budget = st.number_input("目標規劃預算 (TWD)", min_value=0.0, step=10000.0)
+        btn_add_proj = st.form_submit_button("➕ 建立專案")
+        
+        if btn_add_proj and new_proj_name:
+            st.session_state.project_budgets[new_proj_name] = new_proj_budget
+            st.success(f"✅ 已建立專案：{new_proj_name}")
+
+    # 表單 2：設定關鍵字自動歸類規則
+    with st.form("add_keyword_form", clear_on_submit=True):
+        st.markdown("**2. 設定廣告名稱關鍵字歸類**")
+        new_kw = st.text_input("廣告名稱關鍵字", placeholder="例如：跨年")
+        target_proj = st.selectbox("自動歸類至專案", list(st.session_state.project_budgets.keys()))
+        btn_add_kw = st.form_submit_button("🏷️ 綁定關鍵字")
+        
+        if btn_add_kw and new_kw:
+            st.session_state.keyword_map[new_kw] = target_proj
+            st.success(f"✅ 規則已生效：含「{new_kw}」歸類至【{target_proj}】")
+
+st.sidebar.divider()
+
+# 表單 3：專案儲值紀錄
 st.sidebar.subheader("💳 新增專案儲值紀錄")
 with st.sidebar.form("deposit_form", clear_on_submit=True):
     d_date = st.date_input("儲值日期", value=today)
     d_proj = st.selectbox("歸屬專案", list(st.session_state.project_budgets.keys()))
     d_amount = st.number_input("儲值金額 (TWD)", min_value=0.0, step=10000.0)
     d_note = st.text_input("備註說明", value="")
-    submitted = st.form_submit_button("➕ 寫入系統並更新圖表")
+    submitted = st.form_submit_button("➕ 寫入儲值紀錄")
 
 if submitted and d_amount > 0:
     st.session_state.deposit_logs.append({
@@ -140,7 +172,7 @@ if submitted and d_amount > 0:
         "儲值金額 (TWD)": d_amount,
         "備註": d_note
     })
-    st.sidebar.success(f"✅ 已成功記錄：{d_proj} 儲值 ${d_amount:,.0f}")
+    st.sidebar.success(f"✅ 已紀錄：{d_proj} 儲值 ${d_amount:,.0f}")
 
 # ==========================================
 # 4. 主畫面呈現與報表匯出
@@ -150,7 +182,6 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
     meta_limit, google_limit, df_ads = fetch_ad_data(start_d, end_d)
     total_deposit_limit = meta_limit + google_limit
     
-    # 安全歸類
     df_ads["歸類專案"] = df_ads["廣告名稱"].apply(lambda x: classify_ad(x, st.session_state.keyword_map))
     df_spend = df_ads.groupby("歸類專案")["花費 (TWD)"].sum().reset_index()
     
