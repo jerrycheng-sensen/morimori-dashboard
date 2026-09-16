@@ -10,9 +10,9 @@ from datetime import datetime
 # ==========================================
 def classify_ad(ad_name, keyword_map):
     """
-    程式碼作用：比對廣告名稱關鍵字並歸類至專案，若無符合則歸入「其他/未歸類專案」
+    程式碼作用：比對廣告名稱關鍵字並歸類至專案
     """
-    if not isinstance(ad_name, str):
+    if not isinstance(ad_name, str) or not ad_name:
         return "其他/未歸類專案"
     for kw, proj in keyword_map.items():
         if kw in ad_name:
@@ -47,7 +47,7 @@ if "deposit_logs" not in st.session_state:
     ]
 
 # ==========================================
-# 2. Meta API 數據抓取與雙重防呆邏輯
+# 2. Meta API 數據抓取與硬核防呆
 # ==========================================
 def fetch_meta_ads_data(start_date, end_date):
     if "meta_access_token" not in st.secrets or "meta_ad_account_id" not in st.secrets:
@@ -73,6 +73,7 @@ def fetch_meta_ads_data(start_date, end_date):
         response = requests.get(url, params=params, timeout=10)
         res_data = response.json()
         
+        # 若 API 回傳錯誤，直接顯示警告，幫助排查
         if "error" in res_data:
             err_msg = res_data["error"].get("message", "未知 Meta API 錯誤")
             st.error(f"⚠️ Meta API 回傳錯誤：{err_msg}")
@@ -105,9 +106,13 @@ def fetch_ad_data(start_date=None, end_date=None):
         ]
         df_ads = pd.DataFrame(ads_list)
 
-    # 🟢 第一重防呆：確保回傳的 DataFrame 必定包含預設欄位
-    if df_ads.empty or "廣告名稱" not in df_ads.columns:
-        df_ads = pd.DataFrame(columns=["平台", "廣告名稱", "花費 (TWD)"])
+    # 🟢 硬核防呆：無論如何都強行確保欄位存在，絕不讓 Pandas 報 KeyError
+    if "廣告名稱" not in df_ads.columns:
+        df_ads["廣告名稱"] = pd.Series(dtype=str)
+    if "花費 (TWD)" not in df_ads.columns:
+        df_ads["花費 (TWD)"] = pd.Series(dtype=float)
+    if "平台" not in df_ads.columns:
+        df_ads["平台"] = pd.Series(dtype=str)
 
     return 200000.0, 150000.0, df_ads
 
@@ -138,20 +143,16 @@ if submitted and d_amount > 0:
     st.sidebar.success(f"✅ 已成功記錄：{d_proj} 儲值 ${d_amount:,.0f}")
 
 # ==========================================
-# 4. 主畫面呈現與報表匯出 (第二重防呆保護)
+# 4. 主畫面呈現與報表匯出
 # ==========================================
 if isinstance(date_range, tuple) and len(date_range) == 2:
     start_d, end_d = date_range
     meta_limit, google_limit, df_ads = fetch_ad_data(start_d, end_d)
     total_deposit_limit = meta_limit + google_limit
     
-    # 🟢 第二重防呆：明確檢查欄位存在性後才執行 apply
-    if not df_ads.empty and "廣告名稱" in df_ads.columns:
-        df_ads["歸類專案"] = df_ads["廣告名稱"].apply(lambda x: classify_ad(x, st.session_state.keyword_map))
-    else:
-        df_ads["歸類專案"] = pd.Series(dtype=str)
-        
-    df_spend = df_ads.groupby("歸類專案")["花費 (TWD)"].sum().reset_index() if "歸類專案" in df_ads.columns and not df_ads.empty else pd.DataFrame(columns=["歸類專案", "花費 (TWD)"])
+    # 安全歸類
+    df_ads["歸類專案"] = df_ads["廣告名稱"].apply(lambda x: classify_ad(x, st.session_state.keyword_map))
+    df_spend = df_ads.groupby("歸類專案")["花費 (TWD)"].sum().reset_index()
     
     df_deposits = pd.DataFrame(st.session_state.deposit_logs)
     df_dep_sum = df_deposits.groupby("歸屬專案")["儲值金額 (TWD)"].sum().reset_index() if not df_deposits.empty else pd.DataFrame(columns=["歸屬專案", "儲值金額 (TWD)"])
