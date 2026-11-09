@@ -14,7 +14,7 @@ def test_live_app_without_password_stops_before_any_api(monkeypatch):
 
 
 def test_password_gate(monkeypatch):
-    monkeypatch.setenv("APP_PASSWORD", "long-test-password")
+    monkeypatch.setenv("APP_PASSWORD", "test-pass1")
     app = AppTest.from_file(APP).run()
     assert not app.exception
     assert app.text_input[0].label == "管理密碼"
@@ -35,3 +35,11 @@ def test_demo_all_pages_and_data_display(monkeypatch):
     for page in ["專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接"]:
         app.sidebar.radio[0].set_value(page).run()
         assert not app.exception, page
+
+
+def test_password_under_ten_characters_is_rejected(monkeypatch):
+    monkeypatch.setenv("APP_PASSWORD", "short1234")
+    app = AppTest.from_file(APP).run()
+    assert not app.exception
+    assert "至少 10 個字元" in app.info[0].value
+    assert not app.text_input
