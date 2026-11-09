@@ -47,7 +47,7 @@
 
 | 必要設定 | 用途 |
 |---|---|
-| `APP_PASSWORD` | 至少 16 字元的隨機管理密碼；範例密碼不能使用 |
+| `APP_PASSWORD` | 至少 10 字元的隨機管理密碼；範例密碼不能使用 |
 | `STATE_REPO`, `STATE_TOKEN` | 私人設定及紀錄的永久儲存 |
 | `META_ACCESS_TOKEN`, `META_API_VERSION` | Meta 授權與目前可用版本；舊小寫 `meta_access_token` 在網頁仍相容 |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | Google OAuth 離線授權，詳下一節 |
