@@ -74,9 +74,9 @@ if demo:
     st.warning("示範模式｜以下為人工建立的示例，未串接真實廣告帳號、不儲存設定、不發送 LINE。")
 else:
     password = str(secret("APP_PASSWORD"))
-    if len(password) < 16 or password == "CHANGE_TO_A_LONG_RANDOM_PASSWORD":
+    if len(password) < 10 or password == "CHANGE_TO_A_LONG_RANDOM_PASSWORD":
         st.title("森森廣告數據與異常提醒")
-        st.info("請先在 Streamlit Secrets 設定 APP_PASSWORD、STATE_REPO 與 STATE_TOKEN，再開放真實數據。設定方式見 README。")
+        st.info("請先在 Streamlit Secrets 設定至少 10 個字元的 APP_PASSWORD、STATE_REPO 與 STATE_TOKEN，再開放真實數據。設定方式見 README。")
         st.stop()
     if not st.session_state.get("authenticated"):
         st.title("森森廣告管理登入")
