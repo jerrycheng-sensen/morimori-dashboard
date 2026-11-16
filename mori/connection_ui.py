@@ -1,4 +1,4 @@
-"""Admin-only connection setup. No decrypted secret is rendered as a widget value."""
+"""Connection setup. No decrypted secret is rendered as a widget value."""
 from __future__ import annotations
 import hashlib
 import hmac
@@ -117,7 +117,7 @@ def connection_panel(store, creds, secret, accounts, demo=False):
     with st.expander('系統基礎設定（初次部署使用，平常不必更動）'):
         bootstrap = []
         for key, label in [('STATE_REPO', '私人資料庫位置'), ('STATE_TOKEN', '私人資料庫存取權杖'),
-                           ('CREDENTIALS_KEY', '權杖加密金鑰'), ('APP_PASSWORD', '管理登入密碼')]:
+                           ('CREDENTIALS_KEY', '權杖加密金鑰')]:
             bootstrap.append({'設定': label, '狀態': '已設定' if secret(key) else '未設定',
                               '內容': '********' if secret(key) else '—'})
         st.dataframe(pd.DataFrame(bootstrap), hide_index=True, width='stretch')
@@ -131,7 +131,7 @@ def connection_panel(store, creds, secret, accounts, demo=False):
     rows = []
     for account in accounts:
         check = checks.get(account['key'], {})
-        current_signature = signature(creds, account, str(secret('APP_PASSWORD')))
+        current_signature = signature(creds, account, vault_key)
         valid = check.get('signature') == current_signature
         status = check.get('status', '尚未測試') if valid else '尚未測試／設定已變更'
         rows.append({'帳號': account['name'], '平台': account['platform'], '連線狀態': status,

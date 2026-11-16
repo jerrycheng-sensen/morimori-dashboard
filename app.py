@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import hmac
 import io
 import json
 import os
@@ -77,25 +76,6 @@ def demo_reports(start, end):
 demo = str(secret("DEMO_MODE", "false")).lower() == "true"
 if demo:
     st.warning("示範模式｜以下為人工建立的示例，未串接真實廣告帳號、不儲存設定、不發送 LINE。")
-else:
-    password = str(secret("APP_PASSWORD"))
-    if len(password) < 10 or password == "CHANGE_TO_A_LONG_RANDOM_PASSWORD":
-        st.title("森森廣告數據與異常提醒")
-        st.info("請先在 Streamlit Secrets 設定至少 10 個字元的 APP_PASSWORD、STATE_REPO 與 STATE_TOKEN，再開放真實數據。設定方式見 README。")
-        st.stop()
-    if not st.session_state.get("authenticated"):
-        st.title("森森廣告管理登入")
-        with st.form("login"):
-            entered = st.text_input("管理密碼", type="password")
-            login = st.form_submit_button("登入")
-        if login:
-            if hmac.compare_digest(entered.encode(), password.encode()):
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("密碼不正確。")
-        st.stop()
-
 
 store = None
 settings_sha = None
@@ -132,15 +112,12 @@ def save_settings(updated, notice=None, rule_id=None):
 
 
 st.sidebar.title("🌿 森森廣告管理")
-st.sidebar.caption("系統版本：2026.11.16.9")
+st.sidebar.caption("系統版本：2026.11.16.10")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 logo = st.sidebar.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
 if logo:
     st.sidebar.image(logo, width=180)
-if not demo and st.sidebar.button("登出"):
-    st.session_state.clear()
-    st.rerun()
 st.title(page)
 st.caption("廣告數據、預算與 LINE 異常提醒集中管理")
 if st.session_state.get("save_notice"):

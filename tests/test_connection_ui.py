@@ -17,8 +17,6 @@ def test_masked_form_saves_applies_and_platform_fields_switch():
                        'STATE_TOKEN': 'test-bootstrap', 'CREDENTIALS_KEY': Fernet.generate_key().decode()})
     with patch.object(GitHubStore, 'read', read), patch.object(GitHubStore, 'write', write):
         at.run()
-        at.text_input[0].set_value('test-password-12345')
-        at.button[0].click().run()
         at.radio[0].set_value('API 與權杖設定').run()
         assert not at.exception
         assert not any(w.label in {'Meta API 版本', 'Google API 版本', '舊制開發人員權杖（已停用，不需填寫）'} for w in at.text_input)
