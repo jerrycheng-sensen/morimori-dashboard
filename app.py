@@ -15,6 +15,7 @@ import streamlit as st
 
 from mori.core import (AppError, LEVELS, TAIPEI, conversion_ready, default_settings,
                        validate_settings)
+from mori.accounts import (account_label, account_dependencies, delete_account, normalized_id, save_account)
 from mori.providers import GoogleProvider, provider_for
 from mori.runner import check_rules, conversion_label
 from mori.storage import GitHubStore
@@ -126,7 +127,7 @@ def save_settings(updated):
 
 
 st.sidebar.title("🌿 森森廣告管理")
-st.sidebar.caption("系統版本：2026.11.16.6")
+st.sidebar.caption("系統版本：2026.11.16.7")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 logo = st.sidebar.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
@@ -232,30 +233,35 @@ if page == "數據總覽":
 elif page == "帳號與串接":
     st.info("平台權杖請到左側「API 與權杖設定」集中填寫；本頁只管理廣告帳號與訂位事件。")
     st.subheader("廣告帳號設定")
-    st.write("帳號名稱可自訂。先儲存帳號，再按「檢查串接與轉換事件」確認訂位事件。")
+    st.write("選擇「編輯既有帳號」更新訂位事件；只有接入另一個廣告帳號時才選「新增帳號」。")
     if names:
         st.dataframe(pd.DataFrame([{"名稱": a["name"], "平台": a["platform"], "帳號": a["account_id"], "轉換口徑": conversion_label(a)} for a in settings["accounts"]]), hide_index=True)
-    choice = st.selectbox("新增或修改帳號", ["新增帳號"] + list(names), format_func=lambda k: names.get(k, k))
+    operation = st.radio("帳號操作", ["編輯既有帳號", "新增帳號"] if names else ["新增帳號"], horizontal=True)
+    choice = st.selectbox("選擇要編輯的帳號", list(names),
+                          format_func=lambda k: account_label(account_by_key[k])) if operation == "編輯既有帳號" else "new"
     existing = account_by_key.get(choice, {})
+    if existing:
+        st.caption("正在編輯：" + account_label(existing))
     platform = st.selectbox("廣告平台", ["meta", "google"], index=1 if existing.get("platform") == "google" else 0,
-                            format_func=lambda x: "Meta 廣告" if x == "meta" else "Google Ads 廣告", key="account_platform_" + choice)
-    with st.form("account"):
-        name = st.text_input("帳號名稱（自訂，例如：森森燒肉－Meta）", existing.get("name", ""))
+                            format_func=lambda x: "Meta 廣告" if x == "meta" else "Google Ads 廣告",
+                            key="account_platform_" + choice, disabled=bool(existing))
+    with st.form("account_" + choice):
+        name = st.text_input("帳號名稱（自訂，例如：森森燒肉－Meta）", existing.get("name", ""), key="account_name_" + choice)
         st.caption("自行命名，方便你在儀表板辨識；不用向平台申請，也不會更改廣告後台的名稱。")
-        aid = st.text_input("廣告帳號 ID", existing.get("account_id", ""))
+        aid = st.text_input("廣告帳號 ID", existing.get("account_id", ""), key="account_id_" + choice)
         st.caption(META_ACCOUNT_GUIDANCE if platform == "meta" else GOOGLE_ACCOUNT_GUIDANCE)
         action = existing.get("meta_action_type", "")
         mode = existing.get("google_conversion_mode", "selected")
         action_ids = ",".join(existing.get("google_action_ids", []))
         if platform == "meta":
-            action = st.text_input("訂位事件代碼（Meta 購買；尚未查詢可先留空）", action)
+            action = st.text_input("訂位事件代碼（Meta 購買；尚未查詢可先留空）", action, key="account_action_" + choice)
             st.caption(META_ACTION_GUIDANCE)
         else:
             mode = "selected"
             st.caption("轉換口徑：只統計指定的訂位事件。請勿同時選入重複追蹤同一筆訂位的事件。")
-            action_ids = st.text_input("訂位轉換動作 ID（數字；多個用逗號分隔）", action_ids)
+            action_ids = st.text_input("訂位轉換動作 ID（數字；多個用逗號分隔）", action_ids, key="account_conversions_" + choice)
             st.caption(GOOGLE_ACTION_GUIDANCE)
-        if st.form_submit_button("儲存帳號"):
+        if st.form_submit_button("更新此帳號" if existing else "新增帳號"):
             if not name.strip():
                 st.error("請填寫帳號名稱。")
             elif existing and platform != existing["platform"]:
@@ -264,11 +270,43 @@ elif page == "帳號與串接":
                 account = {"key": existing.get("key", uuid.uuid4().hex[:12]), "name": name.strip(), "platform": platform,
                            "account_id": aid.replace("-", "").strip(), "meta_action_type": action.strip(),
                            "google_conversion_mode": mode, "google_action_ids": [x.strip() for x in action_ids.split(",") if x.strip()]}
-                updated = copy.deepcopy(settings)
-                updated["accounts"] = [a for a in updated["accounts"] if a["key"] != account["key"]] + [account]
-                save_settings(updated)
+                try:
+                    updated = save_account(settings, account)
+                except AppError as exc:
+                    st.error(str(exc))
+                else:
+                    save_settings(updated)
+    if existing:
+        with st.expander("刪除此帳號設定"):
+            st.write("將刪除：" + account_label(existing))
+            st.caption("只刪除儀表板內這筆設定，不會刪除平台廣告帳號，也不會移除共用權杖。")
+            dependencies = account_dependencies(settings, choice)
+            replacement_key = None
+            can_delete = True
+            if dependencies:
+                st.warning("這筆設定仍有專案或異常規則使用，刪除前必須先移轉。")
+                for group, item in dependencies:
+                    st.write(("專案：" if group == "projects" else "規則：") + item["name"])
+                candidates = [a["key"] for a in settings["accounts"] if a["key"] != choice
+                              and a["platform"] == existing["platform"]
+                              and normalized_id(a["account_id"]) == normalized_id(existing["account_id"])]
+                if candidates:
+                    replacement_key = st.selectbox("將上述專案與規則移轉至保留的同帳號紀錄", [None] + candidates,
+                        format_func=lambda k: "請選擇保留紀錄" if k is None else account_label(account_by_key[k]), key="account_replacement_" + choice)
+                    can_delete = replacement_key is not None
+                else:
+                    st.info("沒有可接收的同帳號紀錄，請先到專案預算或異常規則調整關聯。")
+                    can_delete = False
+            confirmed = st.checkbox("確認刪除上述帳號設定", key="account_delete_confirm_" + choice)
+            if st.button("刪除此帳號設定", disabled=not (confirmed and can_delete), key="account_delete_" + choice):
+                try:
+                    updated = delete_account(settings, choice, replacement_key)
+                except AppError as exc:
+                    st.error(str(exc))
+                else:
+                    save_settings(updated)
     if names:
-        key = st.selectbox("檢查串接／列出轉換事件的帳號", list(names), format_func=names.get)
+        key = st.selectbox("檢查串接／列出轉換事件的帳號", list(names), format_func=lambda k: account_label(account_by_key[k]))
         if st.button("檢查串接與轉換事件"):
             if demo:
                 st.info("示範模式不連接 API。")

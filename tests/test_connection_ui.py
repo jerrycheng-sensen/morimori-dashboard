@@ -35,7 +35,7 @@ def test_masked_form_saves_applies_and_platform_fields_switch():
         assert any('加密表單' in d.value.to_string() for d in at.dataframe)
         at.radio[0].set_value('帳號與串接').run()
         assert not any('訂位轉換動作 ID' in w.label for w in at.text_input)
-        at.selectbox(key='account_platform_新增帳號').set_value('google').run()
+        at.selectbox(key='account_platform_new').set_value('google').run()
         assert not at.exception
         assert any('訂位轉換動作 ID' in w.label for w in at.text_input)
         assert not any('訂位事件代碼' in w.label for w in at.text_input)
