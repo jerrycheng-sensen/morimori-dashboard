@@ -66,3 +66,19 @@ def test_rule_save_selects_saved_rule_and_updates_in_place(monkeypatch):
     assert not app.exception
     assert len(app.session_state['demo_settings']['rules']) == 2
     assert app.session_state['demo_settings']['rules'][-1]['name'] == '永華店開幕更新'
+
+
+def test_rule_delete_requires_confirmation_and_new_button_opens_empty_form(monkeypatch):
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    app = AppTest.from_file(APP, default_timeout=15).run()
+    app.sidebar.radio[0].set_value('異常規則').run()
+    app.selectbox(key='rule_editor_choice').set_value('demo-rule').run()
+    assert next(x for x in app.button if x.label == '刪除此規則').disabled
+    next(x for x in app.checkbox if x.label == '確認刪除這筆已儲存規則').check().run()
+    next(x for x in app.button if x.label == '刪除此規則').click().run()
+    assert not app.exception
+    assert app.session_state['demo_settings']['rules'] == []
+    next(x for x in app.button if x.label == '＋新增規則').click().run()
+    assert not app.exception
+    assert app.selectbox(key='rule_editor_choice').value == '新增規則'
+    assert next(x for x in app.text_input if x.label == '規則名稱').value == ''

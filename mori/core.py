@@ -73,6 +73,10 @@ def validate_settings(data):
         rule_ids.add(rule["id"])
         if rule.get("account_key") not in account_ids:
             raise AppError("規則指定的廣告帳號不存在。")
+        if rule.get("project_id"):
+            project = next((p for p in data.get("projects", []) if p["id"] == rule["project_id"]), None)
+            if not project or project["account_key"] != rule["account_key"]:
+                raise AppError("規則必須連結同一廣告帳號的專案。")
         if rule.get("level") not in LEVELS:
             raise AppError("異常判斷層級不正確。")
         account = next(a for a in data["accounts"] if a["key"] == rule["account_key"])
@@ -114,6 +118,29 @@ def period_until_yesterday(days, now=None):
     now = now or datetime.now(TAIPEI)
     end = now.astimezone(TAIPEI).date() - timedelta(days=1)
     return end - timedelta(days=days - 1), end
+
+
+def rule_window(rule, settings, now=None):
+    """Return the effective data window; the final campaign day is checked next morning."""
+    since, until = period_until_yesterday(int(rule.get("period_days", 1)), now)
+    project = next((p for p in settings.get("projects", []) if p["id"] == rule.get("project_id")), None)
+    if not rule.get("enabled"):
+        return since, until, "未啟用"
+    if rule.get("project_id") and not project:
+        return since, until, "關聯專案不存在"
+    if project and project.get("status") == "已結案":
+        return since, until, "專案已結案"
+    starts = [x for x in (rule.get("starts_on"), project.get("start") if project else None) if x]
+    ends = [x for x in (rule.get("ends_on"), project.get("end") if project else None) if x]
+    start = max(starts) if starts else None
+    end = min(ends) if ends else None
+    if start and until.isoformat() < start:
+        return since, until, "尚未開始"
+    if end and until.isoformat() > end:
+        return since, until, "已到期"
+    if start:
+        since = max(since, date.fromisoformat(start))
+    return since, until, "生效中"
 
 
 def select_slot(schedule, now, completed):

@@ -21,3 +21,30 @@ def test_preview_explains_filter_threshold_date_and_disabled_rules():
     assert not errors
     assert len(found) == 1 and found[0]['rule_name'] == '異常'
     assert [d['結果'] for d in details] == ['未啟用，未檢查','資料日期早於規則起日，略過','名稱或活動類型沒有符合','花費未超過門檻','未達 CPA／零轉換提醒條件','符合異常條件']
+
+
+def test_project_dates_and_closed_status_control_rule_execution():
+    from mori.core import rule_window, validate_settings, AppError
+    import pytest
+    s = default_settings()
+    s['accounts'] = [{'key':'m','name':'Meta','platform':'meta','account_id':'1','meta_action_type':'purchase'}]
+    s['projects'] = [{'id':'p','name':'永華店開幕','account_key':'m','start':'2026-11-15','end':'2026-11-19','status':'進行中','budget':1000,'keyword':'永華店開幕'}]
+    rule = {'id':'r','name':'CPA','account_key':'m','project_id':'p','enabled':True,'level':'ad','period_days':7,'minimum_spend':50,'cpa_threshold':50,'notify_zero':True}
+    s['rules'] = [rule]
+    validate_settings(s)
+    now = lambda day: datetime(2026,11,day,9,tzinfo=TAIPEI)
+    assert rule_window(rule,s,now(15))[2] == '尚未開始'
+    start,end,status = rule_window(rule,s,now(20))
+    assert str(start) == '2026-11-15' and str(end) == '2026-11-19' and status == '生效中'
+    assert rule_window(rule,s,now(21))[2] == '已到期'
+    # Extending the project date takes effect without resaving the rule.
+    s['projects'][0]['end'] = '2026-11-25'
+    assert rule_window(rule,s,now(21))[2] == '生效中'
+    s['projects'][0]['status'] = '已結案'
+    assert rule_window(rule,s,now(21))[2] == '專案已結案'
+    def no_api(*args):
+        raise AssertionError('Closed project must not read platform data')
+    assert check_rules(s,{},now(21),no_api) == ([],[])
+    s['rules'][0]['project_id'] = 'missing'
+    with pytest.raises(AppError,match='專案'):
+        validate_settings(s)

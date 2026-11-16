@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 
 from mori.core import (AppError, aggregate, conversion_ready, evaluate, fingerprint, period_until_yesterday,
-                       select_slot, validate_settings)
+                       rule_window, select_slot, validate_settings)
 from mori.credentials import credentials_from_env
 from mori.notifications import LineClient, build_batches, recipient_map
 from mori.providers import provider_for
@@ -30,16 +30,12 @@ def check_rules(settings, credentials, now=None, provider_factory=provider_for, 
                   "花費超過門檻的項目": 0, "異常項目": 0, "結果": "未啟用，未檢查"}
         if diagnostics is not None:
             diagnostics.append(detail)
-        if not rule.get("enabled", False):
-            continue
         account = accounts[rule["account_key"]]
-        since, until = period_until_yesterday(int(rule["period_days"]), now)
+        since, until, state = rule_window(rule, settings, now)
         detail["資料區間"] = f"{since} ～ {until}"
-        if rule.get("starts_on") and until.isoformat() < rule["starts_on"]:
-            detail["結果"] = "資料日期早於規則起日，略過"
-            continue
-        if rule.get("ends_on") and until.isoformat() > rule["ends_on"]:
-            detail["結果"] = "資料日期超過規則迄日，略過"
+        if state != "生效中":
+            detail["結果"] = {"未啟用": "未啟用，未檢查", "尚未開始": "資料日期早於規則起日，略過",
+                              "已到期": "資料日期超過規則迄日，略過"}.get(state, state + "，略過")
             continue
         try:
             if not conversion_ready(account):

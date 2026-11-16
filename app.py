@@ -14,7 +14,7 @@ import requests
 import streamlit as st
 
 from mori.core import (AppError, LEVELS, TAIPEI, conversion_ready, default_settings,
-                       validate_settings)
+                       rule_window, validate_settings)
 from mori.accounts import (account_label, account_dependencies, delete_account, normalized_id, save_account)
 from mori.providers import GoogleProvider, provider_for
 from mori.runner import check_rules, conversion_label
@@ -96,6 +96,7 @@ else:
                 st.error("密碼不正確。")
         st.stop()
 
+
 store = None
 settings_sha = None
 if demo:
@@ -131,7 +132,7 @@ def save_settings(updated, notice=None, rule_id=None):
 
 
 st.sidebar.title("🌿 森森廣告管理")
-st.sidebar.caption("系統版本：2026.11.16.8")
+st.sidebar.caption("系統版本：2026.11.16.9")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 logo = st.sidebar.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
@@ -386,18 +387,22 @@ elif page == "異常規則":
         st.subheader("已儲存規則")
         if settings["rules"]:
             st.dataframe(pd.DataFrame([{
-                "規則名稱": r["name"], "狀態": "已啟用" if r.get("enabled") else "未啟用",
+                "規則名稱": r["name"], "狀態": rule_window(r, settings)[2],
+                "關聯專案": next((p["name"] for p in settings["projects"] if p["id"] == r.get("project_id")), "獨立規則"),
                 "帳號": names.get(r["account_key"], r["account_key"]), "層級": LEVELS[r["level"]],
                 "累計天數": r.get("period_days", 1), "花費門檻 >": r["minimum_spend"], "CPA 門檻 >": r["cpa_threshold"],
                 "活動包含": r.get("campaign_filter", ""), "廣告組合包含": r.get("adset_filter", ""),
-                "廣告包含": r.get("ad_filter", ""), "資料起日": r.get("starts_on") or "不限",
-                "資料迄日": r.get("ends_on") or "不限", "通知對象": r.get("recipient_key", "default")
+                "廣告包含": r.get("ad_filter", ""), "資料起日": r.get("starts_on") or next((p["start"] for p in settings["projects"] if p["id"] == r.get("project_id")), "不限"),
+                "資料迄日": r.get("ends_on") or next((p["end"] for p in settings["projects"] if p["id"] == r.get("project_id")), "不限"), "通知對象": r.get("recipient_key", "default")
             } for r in settings["rules"]]), hide_index=True)
         else:
             st.info("尚未儲存任何規則。請填寫下方表單並按「儲存規則」。")
         enabled_count = sum(bool(r.get("enabled")) for r in settings["rules"])
         st.caption(f"已儲存 {len(settings['rules'])} 筆，已啟用 {enabled_count} 筆。預覽只檢查已儲存且啟用的規則。")
         st.caption("自動提醒排程：" + ("已啟用" if settings["schedule"].get("enabled") else "尚未啟用；儲存規則不會自動開啟排程。"))
+        if st.button("＋新增規則"):
+            st.session_state.rule_editor_choice = "新增規則"
+        st.caption("選擇下方既有規則可編輯；選取後可在表單下方刪除。到期規則保留紀錄，但不再參與檢查。")
         rule_names = {r["id"]: r["name"] for r in settings["rules"]}
         pending_rule = st.session_state.pop("pending_rule_selection", None)
         if pending_rule in rule_names:
@@ -406,6 +411,15 @@ elif page == "異常規則":
         rule = next((r for r in settings["rules"] if r["id"] == choice), {})
         # 帳號在 form 外，切換平台後層級選項立即更新。
         account_key = st.selectbox("規則指定帳號", list(names), index=list(names).index(rule["account_key"]) if rule else 0, format_func=names.get, key="rule_account_" + choice)
+        available_projects = {p["id"]: p for p in settings["projects"] if p["account_key"] == account_key}
+        project_options = [""] + list(available_projects)
+        project_id = st.selectbox("連結廣告專案（選填）", project_options,
+            index=project_options.index(rule.get("project_id", "")) if rule.get("project_id", "") in project_options else 0,
+            format_func=lambda k: "不連結，使用規則自己的起訖日" if not k else available_projects[k]["name"],
+            key="rule_project_" + choice + "_" + account_key)
+        linked_project = available_projects.get(project_id)
+        if linked_project:
+            st.info(f"跟隨專案期間：{linked_project['start']} ～ {linked_project['end']}；狀態：{linked_project['status']}。專案日期或結案狀態更新時，規則會同步套用。")
         google = account_by_key[account_key]["platform"] == "google"
         if not conversion_ready(account_by_key[account_key]):
             st.warning("此帳號還沒有轉換口徑，請先到「帳號與串接」設定；排程不會把它當成零轉換。")
@@ -424,22 +438,28 @@ elif page == "異常規則":
             ad_filter = "" if google else st.text_input("廣告名稱包含", rule.get("ad_filter", ""))
             channel_options = ["ALL", "SEARCH", "PERFORMANCE_MAX", "DISPLAY", "VIDEO", "DEMAND_GEN", "SHOPPING"]
             channel = st.selectbox("Google 活動類型", channel_options, index=channel_options.index(rule.get("channel", "ALL")) if rule.get("channel", "ALL") in channel_options else 0) if google else "ALL"
-            starts_on = st.text_input("規則啟用起日（選填 YYYY-MM-DD）", rule.get("starts_on", ""))
-            ends_on = st.text_input("規則結束日（選填 YYYY-MM-DD）", rule.get("ends_on", ""))
+            if linked_project:
+                starts_on, ends_on = "", ""
+            else:
+                starts_on = st.text_input("規則啟用起日（選填 YYYY-MM-DD）", rule.get("starts_on", ""))
+                ends_on = st.text_input("規則結束日（選填 YYYY-MM-DD）", rule.get("ends_on", ""))
+            st.caption("起訖日指被檢查的廣告資料日期。例如結束日 11/19，11/20 早上完成最後一次檢查，11/21 起自動失效；專案手動結案則立即停止後續檢查。")
             st.caption("門檻使用此帳號幣別。Meta 先套用三層名稱篩選，再彙總到指定層級；Google 首版以活動層級涵蓋搜尋與 PMax。")
             if st.form_submit_button("儲存規則"):
                 item = {"id": rule.get("id", uuid.uuid4().hex), "name": name.strip(), "enabled": enabled, "account_key": account_key,
                         "level": level, "period_days": days, "minimum_spend": spend, "cpa_threshold": cpa, "notify_zero": zero,
                         "campaign_filter": campaign_filter.strip(), "adset_filter": adset_filter.strip(), "ad_filter": ad_filter.strip(),
                         "channel": channel, "starts_on": starts_on.strip(), "ends_on": ends_on.strip()}
+                item["project_id"] = project_id
                 item["recipient_key"] = recipient_key.strip() or "default"
                 updated = copy.deepcopy(settings)
                 updated["rules"] = [r for r in updated["rules"] if r["id"] != item["id"]] + [item]
                 save_settings(updated, notice=f"規則「{item['name']}」已儲存，狀態：{'已啟用' if enabled else '未啟用'}。", rule_id=item["id"])
         if rule:
-            with st.expander("刪除此規則"):
+            with st.expander("刪除此規則", expanded=True):
+                st.write("將刪除規則：" + rule["name"])
                 confirmed = st.checkbox("確認刪除這筆已儲存規則")
-                if st.button("刪除", disabled=not confirmed):
+                if st.button("刪除此規則", disabled=not confirmed):
                     updated = copy.deepcopy(settings)
                     updated["rules"] = [r for r in updated["rules"] if r["id"] != rule["id"]]
                     save_settings(updated)

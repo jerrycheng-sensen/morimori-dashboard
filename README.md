@@ -156,3 +156,7 @@ DEMO_MODE=true streamlit run app.py
 - LINE 重試：https://developers.line.biz/en/docs/messaging-api/retrying-api-request/
 
 Google／Streamlit／GitHub／LINE 官方文件已取得；Meta 官方文件在此次查詢回傳429，未能核實當日最新版本與所有欄位變更。因此 Meta API version 必須由實際應用程式確認，並需做真實帳號驗收，不能宣稱已驗證上線。
+
+### 規則與專案期間
+
+規則可新增、編輯與刪除；刪除前會顯示規則名稱並要求確認。規則可選擇連結同一廣告帳號的專案，執行時讀取專案最新起訖日期與結案狀態。未連結時使用規則自己的資料起訖日。資料結束日仍在隔天早上檢查一次，下一天起顯示已到期；專案手動結案立即停止後續檢查。到期不刪除設定，保留查閱。
