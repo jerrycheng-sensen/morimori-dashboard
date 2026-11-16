@@ -1,0 +1,12 @@
+.streamlit/secrets.toml
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+settings.json
+runtime.json
+runner-lock.json
+*.zip
