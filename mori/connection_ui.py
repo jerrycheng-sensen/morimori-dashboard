@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
+from cryptography.fernet import Fernet
 from mori.core import AppError, TAIPEI
 from mori.providers import provider_for
 from mori.vault import CredentialVault, FIELDS
@@ -29,11 +30,22 @@ def connection_panel(store, creds, secret, accounts, demo=False):
         except AppError as exc:
             st.error(str(exc))
     if not vault:
-        st.info('表單的加密儲存尚未啟用。請先由部署管理員在 Streamlit Secrets 設定 CREDENTIALS_KEY。原有 Secrets 權杖仍可讀取。')
-        with st.expander('一次性啟用說明'):
-            st.write('產生 Fernet 加密金鑰，存入 Streamlit Secrets 的 CREDENTIALS_KEY；需要背景巡檢時，將同一把金鑰存入 GitHub Actions Secrets。金鑰不能放進程式碼或私人設定庫。')
-            st.code('python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"', language='bash')
-            st.caption('這是給部署管理員執行的指令。不要把產生的金鑰貼到對話。更換金鑰前必須先完成資料重新加密。')
+        st.info('先完成一次性啟用，再填各平台權杖。啟用後，Meta、Google 與 LINE 的權杖都在本頁管理。')
+        with st.expander('第一次使用：啟用權杖表單', expanded=True):
+            st.write('① 按下方按鈕，系統會產生保護權杖用的加密金鑰。這不是 Meta 或 GitHub 權杖，不用向外申請。')
+            if st.button('產生一次性啟用設定', disabled=demo, key='generate_vault_key'):
+                if not st.session_state.get('pending_vault_key'):
+                    st.session_state.pending_vault_key = Fernet.generate_key().decode()
+            pending_key = st.session_state.get('pending_vault_key')
+            if pending_key:
+                st.warning('以下是機密設定，只給你複製使用。不要截圖、傳給他人或貼到對話。')
+                st.code('CREDENTIALS_KEY = "' + pending_key + '"', language='toml')
+                st.write('② 按設定框右上角的複製圖示。到右下角 Manage app → 管理面板的 ⋮ → Settings → Secrets，在原有內容最下方另起一行貼上。保留原本所有內容，再按 Save。這一步只需做一次。')
+                st.write('③ 回到本頁重新整理；啟用成功後，下方權杖欄位就能填寫。')
+                st.caption('請把這把加密金鑰另外保存於密碼管理工具。之後啟用背景排程時，GitHub Actions 也要使用相同的 CREDENTIALS_KEY。')
+    else:
+        st.session_state.pop('pending_vault_key', None)
+        st.success('加密儲存已啟用，可以在下方填入平台權杖。')
 
     vault_values = {}
     if vault:
