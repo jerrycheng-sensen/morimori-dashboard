@@ -69,3 +69,12 @@ def test_meta_version_is_managed_without_manual_input(version):
     if version is not None:
         credentials["META_API_VERSION"] = version
     assert MetaProvider(credentials).root == "https://graph.facebook.com/" + DEFAULT_META_API_VERSION
+
+
+def test_google_version_default_and_retired_developer_token_not_sent():
+    from mori.providers import GoogleProvider, DEFAULT_GOOGLE_API_VERSION
+    credentials = {"GOOGLE_CLIENT_ID": "id", "GOOGLE_CLIENT_SECRET": "secret", "GOOGLE_REFRESH_TOKEN": "refresh", "GOOGLE_DEVELOPER_TOKEN": "retired"}
+    provider = GoogleProvider(credentials)
+    provider._access_token = "test-access"
+    assert provider.root == "https://googleads.googleapis.com/" + DEFAULT_GOOGLE_API_VERSION
+    assert "developer-token" not in provider.headers()

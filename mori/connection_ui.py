@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 from cryptography.fernet import Fernet
 from mori.core import AppError, TAIPEI
-from mori.providers import provider_for, DEFAULT_META_API_VERSION
+from mori.providers import provider_for, DEFAULT_META_API_VERSION, DEFAULT_GOOGLE_API_VERSION
 from mori.vault import CredentialVault, FIELDS
 
 
@@ -52,8 +52,11 @@ def connection_panel(store, creds, secret, accounts, demo=False):
         vault_values, _ = vault.read()
     inventory = []
     for key, (label, sensitive, group) in FIELDS.items():
-        managed_version = key == 'META_API_VERSION' and not creds.get(key)
-        effective_value = DEFAULT_META_API_VERSION if managed_version else creds.get(key)
+        if key == 'GOOGLE_DEVELOPER_TOKEN':
+            continue
+        version_defaults = {'META_API_VERSION': DEFAULT_META_API_VERSION, 'GOOGLE_API_VERSION': DEFAULT_GOOGLE_API_VERSION}
+        managed_version = key in version_defaults and not creds.get(key)
+        effective_value = version_defaults[key] if managed_version else creds.get(key)
         present = bool(effective_value)
         inventory.append({'平台': {'meta': 'Meta', 'google': 'Google', 'line': 'LINE', 'github': 'GitHub'}[group],
                           '欄位': label,
@@ -64,15 +67,19 @@ def connection_panel(store, creds, secret, accounts, demo=False):
     st.caption('已儲存代表系統讀到設定；連線是否可用，請看下方各廣告帳號的實際測試結果。')
 
     for group, title in [('meta', 'Meta 廣告串接（先完成這裡）'),
-                         ('google', 'Google Ads 串接（稍後設定）'), ('line', 'LINE 通知串接'),
+                         ('google', 'Google Ads 串接'), ('line', 'LINE 通知串接'),
                          ('github', 'GitHub 排程啟動設定')]:
         with st.expander(title, expanded=group == 'meta'):
             if group == 'meta':
                 st.caption('只需填入 Meta 廣告讀取權杖。API 版本由系統管理，目前使用 ' + str(creds.get('META_API_VERSION') or DEFAULT_META_API_VERSION) + '。')
+            if group == 'google':
+                st.write('先在 Google Cloud 建立串接程式與授權，再把取得的資料貼到這裡。以下不是廣告帳號的登入資料。')
+                st.caption('① 程式 ID 與密鑰：從 Google Cloud 的 OAuth 用戶端取得。② 授權憑證：授權有廣告存取權的 Google 帳號後取得。③ 若經 MCC 讀取子帳號，再填 MCC 的 10 碼編號。')
+                st.caption('API 版本由系統管理，目前使用 ' + str(creds.get('GOOGLE_API_VERSION') or DEFAULT_GOOGLE_API_VERSION) + '。新串接不需要申請舊制開發人員權杖；Google Cloud 專案須取得正式廣告帳號的 API 存取權。')
             with st.form('credential_form_' + group, clear_on_submit=True):
                 changes = {}
                 for key, (label, sensitive, field_group) in FIELDS.items():
-                    if field_group != group or key == 'META_API_VERSION':
+                    if field_group != group or key in {'META_API_VERSION', 'GOOGLE_API_VERSION', 'GOOGLE_DEVELOPER_TOKEN'}:
                         continue
                     changes[key] = st.text_input(label, value='', type='password' if sensitive else 'default',
                                                  placeholder='已設定；留空保留，輸入新值以更換' if creds.get(key) else '尚未設定',

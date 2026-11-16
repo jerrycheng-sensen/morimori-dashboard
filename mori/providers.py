@@ -94,6 +94,9 @@ class MetaProvider:
                 "account_name": info.get("name", account["name"]), "conversion_ready": conversion_ready(account)}
 
 
+DEFAULT_GOOGLE_API_VERSION = "v26"
+
+
 class GoogleProvider:
     def __init__(self, credentials, session=None):
         self.credentials = credentials
@@ -101,7 +104,7 @@ class GoogleProvider:
         for key in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"):
             if not credentials.get(key):
                 raise AppError(f"尚未設定 {key}。")
-        version = credentials.get("GOOGLE_API_VERSION") or "v26"
+        version = credentials.get("GOOGLE_API_VERSION") or DEFAULT_GOOGLE_API_VERSION
         if not re.fullmatch(r"v\d+", version):
             raise AppError("GOOGLE_API_VERSION 格式不正確。")
         self.root = f"https://googleads.googleapis.com/{version}"
@@ -118,9 +121,8 @@ class GoogleProvider:
         headers = {"Authorization": f"Bearer {self._access_token}", "Content-Type": "application/json"}
         if self.credentials.get("GOOGLE_LOGIN_CUSTOMER_ID"):
             headers["login-customer-id"] = google_id(self.credentials["GOOGLE_LOGIN_CUSTOMER_ID"])
-        # 2026-09 後存取由 Google Cloud 專案管理；舊 token 可選，不作必要條件。
-        if self.credentials.get("GOOGLE_DEVELOPER_TOKEN"):
-            headers["developer-token"] = self.credentials["GOOGLE_DEVELOPER_TOKEN"]
+        # API access is managed by the OAuth client's Google Cloud project.
+        # Developer tokens were sunset; do not send legacy credentials.
         return headers
 
     def query(self, account, query):
