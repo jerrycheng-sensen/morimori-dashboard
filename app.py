@@ -20,6 +20,8 @@ from mori.runner import check_rules, conversion_label
 from mori.storage import GitHubStore
 from mori.vault import resolve_credentials
 from mori.connection_ui import connection_panel
+from mori.field_guidance import (META_ACCOUNT_GUIDANCE, GOOGLE_ACCOUNT_GUIDANCE,
+                                 META_ACTION_GUIDANCE, GOOGLE_ACTION_GUIDANCE)
 
 st.set_page_config(page_title="森森廣告數據與異常提醒", page_icon="🌿", layout="wide")
 st.markdown("""<style>
@@ -124,7 +126,7 @@ def save_settings(updated):
 
 
 st.sidebar.title("🌿 森森廣告管理")
-st.sidebar.caption("系統版本：2026.11.16.4")
+st.sidebar.caption("系統版本：2026.11.16.5")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 logo = st.sidebar.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
@@ -239,17 +241,20 @@ elif page == "帳號與串接":
                             format_func=lambda x: "Meta 廣告" if x == "meta" else "Google Ads 廣告", key="account_platform_" + choice)
     with st.form("account"):
         name = st.text_input("帳號名稱（自訂，例如：森森燒肉－Meta）", existing.get("name", ""))
+        st.caption("自行命名，方便你在儀表板辨識；不用向平台申請，也不會更改廣告後台的名稱。")
         aid = st.text_input("廣告帳號 ID", existing.get("account_id", ""))
+        st.caption(META_ACCOUNT_GUIDANCE if platform == "meta" else GOOGLE_ACCOUNT_GUIDANCE)
         action = existing.get("meta_action_type", "")
         mode = existing.get("google_conversion_mode", "selected")
         action_ids = ",".join(existing.get("google_action_ids", []))
         if platform == "meta":
             action = st.text_input("訂位事件代碼（Meta 購買；尚未查詢可先留空）", action)
-            st.caption("只選一種購買事件；串接後與後台購買數比對，不把多個購買彙總事件相加。")
+            st.caption(META_ACTION_GUIDANCE)
         else:
             mode = "selected"
             st.caption("轉換口徑：只統計指定的訂位事件。請勿同時選入重複追蹤同一筆訂位的事件。")
             action_ids = st.text_input("訂位轉換動作 ID（數字；多個用逗號分隔）", action_ids)
+            st.caption(GOOGLE_ACTION_GUIDANCE)
         if st.form_submit_button("儲存帳號"):
             if not name.strip():
                 st.error("請填寫帳號名稱。")

@@ -10,6 +10,7 @@ from cryptography.fernet import Fernet
 from mori.core import AppError, TAIPEI
 from mori.providers import provider_for, DEFAULT_META_API_VERSION, DEFAULT_GOOGLE_API_VERSION
 from mori.vault import CredentialVault, FIELDS
+from mori.field_guidance import FIELD_GUIDANCE
 
 
 def signature(creds, account, key):
@@ -84,6 +85,7 @@ def connection_panel(store, creds, secret, accounts, demo=False):
                     changes[key] = st.text_input(label, value='', type='password' if sensitive else 'default',
                                                  placeholder='已設定；留空保留，輸入新值以更換' if creds.get(key) else '尚未設定',
                                                  help=key, disabled=not bool(vault))
+                    st.caption(FIELD_GUIDANCE[key])
                 submitted = st.form_submit_button('加密儲存並套用', disabled=not bool(vault))
             if submitted:
                 try:
