@@ -112,7 +112,7 @@ else:
         st.stop()
 
 
-def save_settings(updated):
+def save_settings(updated, notice=None, rule_id=None):
     try:
         validated = validate_settings(updated)
         if demo:
@@ -120,14 +120,18 @@ def save_settings(updated):
         else:
             store.write("settings.json", validated, settings_sha)
         st.session_state.pop("report_view", None)
-        st.session_state.save_notice = "設定已儲存。" if not demo else "示範設定已更新，僅保留在這次預覽。"
+        st.session_state.save_notice = (notice or "設定已儲存。") if not demo else "示範設定已更新，僅保留在這次預覽。"
+        if rule_id:
+            st.session_state.pending_rule_selection = rule_id
         st.rerun()
-    except (AppError, ValueError, TypeError):
+    except AppError as exc:
+        st.error("儲存失敗：" + str(exc))
+    except (ValueError, TypeError):
         st.error("儲存失敗：請確認欄位完整、日期與金額正確；若有其他人更新設定，請重新整理頁面後再試。")
 
 
 st.sidebar.title("🌿 森森廣告管理")
-st.sidebar.caption("系統版本：2026.11.16.7")
+st.sidebar.caption("系統版本：2026.11.16.8")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 logo = st.sidebar.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
@@ -379,15 +383,33 @@ elif page == "異常規則":
     if not names:
         st.info("請先新增廣告帳號。")
     else:
+        st.subheader("已儲存規則")
+        if settings["rules"]:
+            st.dataframe(pd.DataFrame([{
+                "規則名稱": r["name"], "狀態": "已啟用" if r.get("enabled") else "未啟用",
+                "帳號": names.get(r["account_key"], r["account_key"]), "層級": LEVELS[r["level"]],
+                "累計天數": r.get("period_days", 1), "花費門檻 >": r["minimum_spend"], "CPA 門檻 >": r["cpa_threshold"],
+                "活動包含": r.get("campaign_filter", ""), "廣告組合包含": r.get("adset_filter", ""),
+                "廣告包含": r.get("ad_filter", ""), "資料起日": r.get("starts_on") or "不限",
+                "資料迄日": r.get("ends_on") or "不限", "通知對象": r.get("recipient_key", "default")
+            } for r in settings["rules"]]), hide_index=True)
+        else:
+            st.info("尚未儲存任何規則。請填寫下方表單並按「儲存規則」。")
+        enabled_count = sum(bool(r.get("enabled")) for r in settings["rules"])
+        st.caption(f"已儲存 {len(settings['rules'])} 筆，已啟用 {enabled_count} 筆。預覽只檢查已儲存且啟用的規則。")
+        st.caption("自動提醒排程：" + ("已啟用" if settings["schedule"].get("enabled") else "尚未啟用；儲存規則不會自動開啟排程。"))
         rule_names = {r["id"]: r["name"] for r in settings["rules"]}
-        choice = st.selectbox("規則", ["新增規則"] + list(rule_names), format_func=lambda k: rule_names.get(k, k))
+        pending_rule = st.session_state.pop("pending_rule_selection", None)
+        if pending_rule in rule_names:
+            st.session_state.rule_editor_choice = pending_rule
+        choice = st.selectbox("規則", ["新增規則"] + list(rule_names), format_func=lambda k: rule_names.get(k, k), key="rule_editor_choice")
         rule = next((r for r in settings["rules"] if r["id"] == choice), {})
         # 帳號在 form 外，切換平台後層級選項立即更新。
-        account_key = st.selectbox("規則指定帳號", list(names), index=list(names).index(rule["account_key"]) if rule else 0, format_func=names.get)
+        account_key = st.selectbox("規則指定帳號", list(names), index=list(names).index(rule["account_key"]) if rule else 0, format_func=names.get, key="rule_account_" + choice)
         google = account_by_key[account_key]["platform"] == "google"
         if not conversion_ready(account_by_key[account_key]):
             st.warning("此帳號還沒有轉換口徑，請先到「帳號與串接」設定；排程不會把它當成零轉換。")
-        with st.form("rule"):
+        with st.form("rule_" + choice):
             name = st.text_input("規則名稱", rule.get("name", ""))
             enabled = st.checkbox("啟用規則", rule.get("enabled", False))
             available_levels = ["campaign"] if google else list(LEVELS)
@@ -413,7 +435,7 @@ elif page == "異常規則":
                 item["recipient_key"] = recipient_key.strip() or "default"
                 updated = copy.deepcopy(settings)
                 updated["rules"] = [r for r in updated["rules"] if r["id"] != item["id"]] + [item]
-                save_settings(updated)
+                save_settings(updated, notice=f"規則「{item['name']}」已儲存，狀態：{'已啟用' if enabled else '未啟用'}。", rule_id=item["id"])
         if rule:
             with st.expander("刪除此規則"):
                 confirmed = st.checkbox("確認刪除這筆已儲存規則")
@@ -422,18 +444,28 @@ elif page == "異常規則":
                     updated["rules"] = [r for r in updated["rules"] if r["id"] != rule["id"]]
                     save_settings(updated)
         if st.button("預覽已儲存且啟用的規則（不發 LINE）"):
-            if demo:
+            if not settings["rules"]:
+                st.warning("尚未儲存規則，請先按「儲存規則」。")
+            elif not enabled_count:
+                st.warning("規則已儲存，但全部未啟用。請選擇規則，勾選「啟用規則」後再儲存。")
+            elif demo:
                 st.info("此預覽只展示操作介面；真實規則須接上私人設定與廣告 API 後驗證。")
             else:
+                diagnostics = []
                 with st.spinner("檢查規則…"):
-                    candidates, errors = check_rules(settings, creds)
+                    candidates, errors = check_rules(settings, creds, diagnostics=diagnostics)
+                st.subheader("各規則檢查結果")
+                st.dataframe(pd.DataFrame(diagnostics), hide_index=True)
                 for item in candidates:
                     item.pop("_rule", None)
-                st.dataframe(pd.DataFrame(candidates), hide_index=True)
+                if candidates:
+                    st.subheader("符合異常條件的項目")
+                    st.dataframe(pd.DataFrame(candidates), hide_index=True)
+                    st.success(f"找到 {len(candidates)} 個異常項目。這是預覽，尚未發送 LINE。")
                 for error in errors:
                     st.error(f"{error['rule']}：{error['error']}")
                 if not candidates and not errors:
-                    st.info("沒有規則觸發；請確認至少一筆規則已啟用。")
+                    st.info("檢查完成，目前沒有符合異常條件的項目。請看上表確認是日期、名稱篩選或門檻造成；這不代表規則未儲存。")
 
 elif page == "通知排程":
     st.write("網頁儲存通知時段；GitHub Actions 每 30 分鐘巡檢，到期後執行。關閉網頁不影響巡檢。")

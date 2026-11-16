@@ -5,7 +5,7 @@ import os
 import uuid
 from datetime import datetime, timezone, timedelta
 
-from mori.core import (AppError, conversion_ready, evaluate, fingerprint, period_until_yesterday,
+from mori.core import (AppError, aggregate, conversion_ready, evaluate, fingerprint, period_until_yesterday,
                        select_slot, validate_settings)
 from mori.credentials import credentials_from_env
 from mori.notifications import LineClient, build_batches, recipient_map
@@ -22,17 +22,24 @@ def conversion_label(account):
     return "Google 指定事件（all_conversions）：" + ",".join(account.get("google_action_ids", []))
 
 
-def check_rules(settings, credentials, now=None, provider_factory=provider_for):
+def check_rules(settings, credentials, now=None, provider_factory=provider_for, diagnostics=None):
     candidates, errors, reports = [], [], {}
     accounts = {a["key"]: a for a in settings["accounts"]}
     for rule in settings["rules"]:
+        detail = {"規則": rule["name"], "資料區間": "—", "回傳明細數": 0, "符合名稱與類型的項目": 0,
+                  "花費超過門檻的項目": 0, "異常項目": 0, "結果": "未啟用，未檢查"}
+        if diagnostics is not None:
+            diagnostics.append(detail)
         if not rule.get("enabled", False):
             continue
         account = accounts[rule["account_key"]]
         since, until = period_until_yesterday(int(rule["period_days"]), now)
+        detail["資料區間"] = f"{since} ～ {until}"
         if rule.get("starts_on") and until.isoformat() < rule["starts_on"]:
+            detail["結果"] = "資料日期早於規則起日，略過"
             continue
         if rule.get("ends_on") and until.isoformat() > rule["ends_on"]:
+            detail["結果"] = "資料日期超過規則迄日，略過"
             continue
         try:
             if not conversion_ready(account):
@@ -41,14 +48,26 @@ def check_rules(settings, credentials, now=None, provider_factory=provider_for):
             if key not in reports:
                 reports[key] = provider_factory(account, credentials).fetch(account, since, until)
             report = reports[key]
-            for item in evaluate(report["rows"], rule):
+            grouped = aggregate(report["rows"], rule)
+            detail["回傳明細數"] = len(report["rows"])
+            detail["符合名稱與類型的項目"] = len(grouped)
+            detail["花費超過門檻的項目"] = sum(x["spend"] > float(rule["minimum_spend"]) for x in grouped)
+            found = evaluate(report["rows"], rule)
+            detail["異常項目"] = len(found)
+            detail["結果"] = ("符合異常條件" if found else "平台未回傳資料" if not report["rows"] else
+                            "名稱或活動類型沒有符合" if not grouped else
+                            "花費未超過門檻" if not detail["花費超過門檻的項目"] else
+                            "未達 CPA／零轉換提醒條件")
+            for item in found:
                 candidates.append({**item, "rule_id": rule["id"], "rule_name": rule["name"],
                     "account_key": account["key"], "account_name": account["name"],
                     "since": since.isoformat(), "until": until.isoformat(),
                     "conversion_label": conversion_label(account), "_rule": rule})
         except AppError as exc:
+            detail["結果"] = "讀取或檢查失敗：" + str(exc)
             errors.append({"rule": rule["name"], "error": str(exc)})
         except Exception:
+            detail["結果"] = "資料格式異常，未完成檢查"
             errors.append({"rule": rule["name"], "error": "資料格式不符合預期，已停止此規則判斷。"})
     return candidates, errors
 
