@@ -25,3 +25,14 @@ def test_line_test_is_explicit_and_retry_is_idempotent():
         assert at.button(key='send_line_test').disabled
         assert at.success and 'API 已接受' in at.success[0].value
         assert client.push.call_count == 2
+
+
+def test_unauthorized_token_error_is_not_reported_as_quota():
+    from mori.notifications import LineClient
+    import pytest
+    response = type('Response', (), {'status_code':401,'ok':False,'headers':{}})()
+    session = type('Session', (), {'post':lambda *args, **kwargs:response})()
+    with pytest.raises(AppError, match='權杖驗證失敗') as exc:
+        LineClient('secret-must-not-be-shown',session).push('C123456','test','retry')
+    assert '不是額度不足' in str(exc.value)
+    assert 'secret-must-not-be-shown' not in str(exc.value)

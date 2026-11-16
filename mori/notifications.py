@@ -52,7 +52,13 @@ class LineClient:
         if response.status_code == 409 and response.headers.get("x-line-accepted-request-id"):
             return "already-accepted"
         if not response.ok:
-            raise AppError(f"LINE 發送失敗（HTTP {response.status_code}），請檢查額度與收件對象。")
+            messages = {
+                401: "LINE 權杖驗證失敗（HTTP 401）：請回填 Messaging API 的 Channel access token，不是 Channel secret 或 Channel ID；請確認權杖完整且未失效。此錯誤不是額度不足。",
+                400: "LINE 請求被拒絕（HTTP 400）：請確認收件者 ID 格式與所屬 Channel，以及官方帳號是否已加入目標群組。",
+                403: "LINE 存取被拒絕（HTTP 403）：請確認 Channel 權限與官方帳號的 API 使用資格。",
+                429: "LINE 發送受限（HTTP 429）：可能達到訊息額度或 API 呼叫頻率限制；請至官方帳號後台檢查用量後再試。",
+            }
+            raise AppError(messages.get(response.status_code, f"LINE 發送失敗（HTTP {response.status_code}），請稍後再試；若持續失敗請檢查 LINE 服務狀態。"))
         return "accepted"
 
 
