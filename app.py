@@ -126,7 +126,7 @@ def save_settings(updated):
 
 
 st.sidebar.title("🌿 森森廣告管理")
-st.sidebar.caption("系統版本：2026.11.16.5")
+st.sidebar.caption("系統版本：2026.11.16.6")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 logo = st.sidebar.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])

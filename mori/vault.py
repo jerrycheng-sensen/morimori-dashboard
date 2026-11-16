@@ -57,6 +57,15 @@ class CredentialVault:
                 raise AppError("請填入完整權杖，不能使用遮罩字元。")
             if value:
                 values[key] = value
+        self._write_values(values, sha)
+
+    def use_direct_google_access(self):
+        values, sha = self.read()
+        # An explicit empty override prevents falling back to a stale MCC in Secrets.
+        values['GOOGLE_LOGIN_CUSTOMER_ID'] = ''
+        self._write_values(values, sha)
+
+    def _write_values(self, values, sha):
         ciphertext = self.cipher.encrypt(json.dumps(values).encode()).decode()
         self.store.write("credentials.encrypted.json", {"version": 1, "ciphertext": ciphertext}, sha,
                          message="更新加密串接設定 [skip ci]")
@@ -66,7 +75,7 @@ def resolve_credentials(base, store, key):
     result = dict(base)
     if key:
         saved, _ = CredentialVault(store, key).read()
-        result.update({k: v for k, v in saved.items() if v})
+        result.update({k: v for k, v in saved.items() if v or k == "GOOGLE_LOGIN_CUSTOMER_ID"})
     else:
         envelope, _ = store.read("credentials.encrypted.json", {})
         if envelope:

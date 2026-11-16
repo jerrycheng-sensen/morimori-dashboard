@@ -78,3 +78,18 @@ def test_google_version_default_and_retired_developer_token_not_sent():
     provider._access_token = "test-access"
     assert provider.root == "https://googleads.googleapis.com/" + DEFAULT_GOOGLE_API_VERSION
     assert "developer-token" not in provider.headers()
+
+
+def test_direct_google_access_clears_saved_mcc_and_overrides_deployment_secret():
+    from mori.providers import GoogleProvider
+    store = Store()
+    key = Fernet.generate_key().decode()
+    vault = CredentialVault(store, key)
+    vault.update({'GOOGLE_LOGIN_CUSTOMER_ID': '1234567890', 'GOOGLE_CLIENT_ID': 'id', 'GOOGLE_CLIENT_SECRET': 'secret', 'GOOGLE_REFRESH_TOKEN': 'refresh'})
+    vault.use_direct_google_access()
+    credentials = resolve_credentials({'GOOGLE_LOGIN_CUSTOMER_ID': 'old-deployment-mcc'}, store, key)
+    assert credentials['GOOGLE_LOGIN_CUSTOMER_ID'] == ''
+    assert credentials['GOOGLE_REFRESH_TOKEN'] == 'refresh'
+    provider = GoogleProvider(credentials)
+    provider._access_token = 'test-access'
+    assert 'login-customer-id' not in provider.headers()

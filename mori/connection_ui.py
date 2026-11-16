@@ -87,6 +87,20 @@ def connection_panel(store, creds, secret, accounts, demo=False):
                                                  help=key, disabled=not bool(vault))
                     st.caption(FIELD_GUIDANCE[key])
                 submitted = st.form_submit_button('加密儲存並套用', disabled=not bool(vault))
+            if group == 'google':
+                if creds.get('GOOGLE_LOGIN_CUSTOMER_ID'):
+                    st.caption('若你直接登入森森的投放帳號，沒有使用上層 MCC，請按下方按鈕。只清除此 MCC 設定，保留程式 ID、密鑰與授權憑證。')
+                    if st.button('我沒有使用 MCC：移除 MCC 編號', key='clear_google_mcc', disabled=not bool(vault)):
+                        try:
+                            vault.use_direct_google_access()
+                            st.session_state.pop('connection_checks', None)
+                            st.session_state.pop('report_view', None)
+                            st.session_state.save_notice = '已移除 MCC 設定，改為直接存取廣告帳號。其他 Google 授權資料保留，請重新測試連線。'
+                            st.rerun()
+                        except AppError as exc:
+                            st.error(str(exc))
+                else:
+                    st.caption('目前未使用 MCC。請在「帳號與串接」填寫實際投放的 Google 廣告帳號 ID。')
             if submitted:
                 try:
                     if not any(v.strip() for v in changes.values()):
