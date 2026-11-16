@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      CREDENTIALS_KEY: ${{ secrets.CREDENTIALS_KEY }}
       STATE_REPO: ${{ secrets.STATE_REPO }}
       STATE_TOKEN: ${{ secrets.STATE_TOKEN }}
       STATE_BRANCH: ${{ secrets.STATE_BRANCH }}

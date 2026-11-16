@@ -18,6 +18,8 @@ from mori.core import (AppError, LEVELS, TAIPEI, conversion_ready, default_setti
 from mori.providers import GoogleProvider, provider_for
 from mori.runner import check_rules, conversion_label
 from mori.storage import GitHubStore
+from mori.vault import resolve_credentials
+from mori.connection_ui import connection_panel
 
 st.set_page_config(page_title="森森廣告數據與異常提醒", page_icon="🌿", layout="wide")
 st.markdown("""<style>
@@ -36,7 +38,7 @@ def secret(key, default=""):
 def credentials():
     names = ["META_ACCESS_TOKEN", "META_API_VERSION", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
              "GOOGLE_REFRESH_TOKEN", "GOOGLE_LOGIN_CUSTOMER_ID", "GOOGLE_API_VERSION",
-             "GOOGLE_DEVELOPER_TOKEN", "LINE_CHANNEL_ACCESS_TOKEN", "LINE_RECIPIENT_ID", "LINE_RECIPIENTS_JSON"]
+             "GOOGLE_DEVELOPER_TOKEN", "LINE_CHANNEL_ACCESS_TOKEN", "LINE_RECIPIENT_ID", "LINE_RECIPIENTS_JSON", "SOURCE_REPO", "SOURCE_TOKEN", "SOURCE_BRANCH"]
     result = {key: str(secret(key)) for key in names}
     result["META_ACCESS_TOKEN"] = result["META_ACCESS_TOKEN"] or str(secret("meta_access_token"))
     return result
@@ -122,7 +124,7 @@ def save_settings(updated):
 
 
 st.sidebar.title("🌿 森森廣告管理")
-page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接"])
+page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 logo = st.sidebar.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
 if logo:
@@ -137,7 +139,11 @@ if st.session_state.get("save_notice"):
 
 account_by_key = {a["key"]: a for a in settings["accounts"]}
 names = {a["key"]: a["name"] for a in settings["accounts"]}
-creds = credentials() if not demo else {}
+try:
+    creds = resolve_credentials(credentials(), store, str(secret("CREDENTIALS_KEY"))) if not demo else {}
+except AppError as exc:
+    st.error(str(exc))
+    st.stop()
 
 
 def fetch_report(account, start, end):
@@ -221,20 +227,28 @@ if page == "數據總覽":
                 st.download_button("下載 Excel 報表", buffer.getvalue(), "mori-ad-report.xlsx")
 
 elif page == "帳號與串接":
-    st.write("先儲存帳號，再查詢平台實際回傳的轉換事件。所有權杖只放 Secrets。")
+    st.info("平台權杖請到左側「API 與權杖設定」集中填寫；本頁只管理廣告帳號與訂位事件。")
+    st.subheader("廣告帳號設定")
+    st.write("帳號名稱可自訂。先儲存帳號，再按「檢查串接與轉換事件」確認訂位事件。")
     if names:
         st.dataframe(pd.DataFrame([{"名稱": a["name"], "平台": a["platform"], "帳號": a["account_id"], "轉換口徑": conversion_label(a)} for a in settings["accounts"]]), hide_index=True)
     choice = st.selectbox("新增或修改帳號", ["新增帳號"] + list(names), format_func=lambda k: names.get(k, k))
     existing = account_by_key.get(choice, {})
+    platform = st.selectbox("廣告平台", ["meta", "google"], index=1 if existing.get("platform") == "google" else 0,
+                            format_func=lambda x: "Meta 廣告" if x == "meta" else "Google Ads 廣告", key="account_platform_" + choice)
     with st.form("account"):
-        name = st.text_input("帳號名稱", existing.get("name", ""))
-        platform = st.selectbox("平台", ["meta", "google"], index=1 if existing.get("platform") == "google" else 0)
+        name = st.text_input("帳號名稱（自訂，例如：森森燒肉－Meta）", existing.get("name", ""))
         aid = st.text_input("廣告帳號 ID", existing.get("account_id", ""))
-        action = st.text_input("Meta 轉換 action_type（尚未確認可先留空）", existing.get("meta_action_type", ""))
-        mode = st.selectbox("Google 轉換口徑", ["selected", "primary"], index=1 if existing.get("google_conversion_mode") == "primary" else 0,
-                            format_func=lambda m: "指定事件（包含該事件的次要轉換）" if m == "selected" else "帳號主要轉換總和（可能含非訂位事件）")
-        action_ids = st.text_input("Google 指定轉換動作 ID（逗號分隔；不是事件名稱）", ",".join(existing.get("google_action_ids", [])))
-        st.caption("Meta 每帳號只選一個 action_type，避免把不同購買彙總事件重複加總。")
+        action = existing.get("meta_action_type", "")
+        mode = existing.get("google_conversion_mode", "selected")
+        action_ids = ",".join(existing.get("google_action_ids", []))
+        if platform == "meta":
+            action = st.text_input("訂位事件代碼（Meta 購買；尚未查詢可先留空）", action)
+            st.caption("只選一種購買事件；串接後與後台購買數比對，不把多個購買彙總事件相加。")
+        else:
+            mode = "selected"
+            st.caption("轉換口徑：只統計指定的訂位事件。請勿同時選入重複追蹤同一筆訂位的事件。")
+            action_ids = st.text_input("訂位轉換動作 ID（數字；多個用逗號分隔）", action_ids)
         if st.form_submit_button("儲存帳號"):
             if not name.strip():
                 st.error("請填寫帳號名稱。")
@@ -267,10 +281,8 @@ elif page == "帳號與串接":
                     st.success("API 請求成功；請選擇與後台一致的轉換事件。")
                 except AppError as exc:
                     st.error(str(exc))
-    with st.expander("部署狀態（只顯示是否設定，不顯示金鑰）"):
-        for key in ["STATE_REPO", "STATE_TOKEN", "SOURCE_REPO", "SOURCE_TOKEN", "META_ACCESS_TOKEN", "META_API_VERSION", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "LINE_CHANNEL_ACCESS_TOKEN", "LINE_RECIPIENT_ID"]:
-            present = bool(creds.get(key) or secret(key))
-            st.write(f"{'✅' if present else '○'} {key}：{'已設定' if present else '未設定'}")
+elif page == "API 與權杖設定":
+    connection_panel(store, creds, secret, settings["accounts"], demo)
 
 elif page == "專案預算":
     st.caption("以專案完整起訖日的花費計算預算結餘；不以局部查詢區間取代累計花費。不把帳號花費上限當成代理商儲值餘額。")
@@ -399,19 +411,19 @@ elif page == "通知排程":
     if st.button("啟動一次檢查", disabled=not confirm_send):
         if demo:
             st.info("示範模式不啟動排程。")
-        elif not secret("SOURCE_REPO") or not secret("SOURCE_TOKEN"):
-            st.error("請先在 Streamlit Secrets 設定 SOURCE_REPO 和有 Actions 寫入權限的 SOURCE_TOKEN。")
+        elif not creds.get("SOURCE_REPO") or not creds.get("SOURCE_TOKEN"):
+            st.error("請先到「API 與權杖設定」填入程式儲存庫及 GitHub 排程啟動權杖（需 Actions 寫入權限）。")
         else:
-            # repo 僅來自管理者 Secrets；固定官方 API 與固定工作流程。
+            # repo 僅來自管理員串接設定；固定官方 API 與固定工作流程。
             import re
-            repo = str(secret("SOURCE_REPO"))
+            repo = str(creds.get("SOURCE_REPO", ""))
             if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
                 st.error("SOURCE_REPO 格式不正確。")
             else:
                 try:
                     response = requests.post(f"https://api.github.com/repos/{repo}/actions/workflows/monitor.yml/dispatches",
-                        headers={"Authorization": f"Bearer {secret('SOURCE_TOKEN')}", "Accept": "application/vnd.github+json"},
-                        json={"ref": str(secret("SOURCE_BRANCH", "main")), "inputs": {"mode": mode}}, timeout=30)
+                        headers={"Authorization": f"Bearer {creds.get('SOURCE_TOKEN', '')}", "Accept": "application/vnd.github+json"},
+                        json={"ref": str(creds.get("SOURCE_BRANCH") or "main"), "inputs": {"mode": mode}}, timeout=30)
                     if response.status_code == 204:
                         st.success("已送出檢查請求；請稍後到「執行紀錄」重新整理。這不代表 LINE 已成功發送。")
                     else:

@@ -11,6 +11,7 @@ from mori.credentials import credentials_from_env
 from mori.notifications import LineClient, build_batches, recipient_map
 from mori.providers import provider_for
 from mori.storage import GitHubStore
+from mori.vault import resolve_credentials
 
 
 def conversion_label(account):
@@ -141,6 +142,7 @@ def main():
     send = args.send and os.environ.get("LIVE_NOTIFICATIONS_ENABLED", "").lower() == "true"
     try:
         store = GitHubStore(os.environ.get("STATE_REPO", ""), os.environ.get("STATE_TOKEN", ""), os.environ.get("STATE_BRANCH") or "main")
+        credentials = resolve_credentials(credentials, store, os.environ.get("CREDENTIALS_KEY", ""))
         result = execute(store, credentials, force=args.force, send=send)
         # 公開程式儲存庫的 Actions log 只輸出狀態，不輸出帳號、花費或通知內容。
         print("Monitor status:", result["status"])
