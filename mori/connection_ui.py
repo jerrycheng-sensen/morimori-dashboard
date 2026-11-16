@@ -11,6 +11,7 @@ from mori.core import AppError, TAIPEI
 from mori.providers import provider_for, DEFAULT_META_API_VERSION, DEFAULT_GOOGLE_API_VERSION
 from mori.vault import CredentialVault, FIELDS
 from mori.field_guidance import FIELD_GUIDANCE
+from mori.line_test_ui import render_line_test
 
 
 def signature(creds, account, key):
@@ -113,6 +114,8 @@ def connection_panel(store, creds, secret, accounts, demo=False):
                         st.rerun()
                 except AppError as exc:
                     st.error(str(exc))
+
+    render_line_test(creds, demo)
 
     with st.expander('系統基礎設定（初次部署使用，平常不必更動）'):
         bootstrap = []
