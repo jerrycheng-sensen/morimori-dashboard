@@ -37,3 +37,18 @@ def test_masked_form_saves_applies_and_platform_fields_switch():
         assert not at.exception
         assert any('訂位轉換動作 ID' in w.label for w in at.text_input)
         assert not any('訂位事件代碼' in w.label for w in at.text_input)
+
+
+def test_first_use_generates_one_stable_key_and_unlocks_after_deployment_setup():
+    def panel():
+        from mori.connection_ui import connection_panel
+        connection_panel(None, {}, lambda key: "", [], False)
+    at = AppTest.from_function(panel, default_timeout=15).run()
+    assert not at.exception
+    assert next(b for b in at.button if b.label == '加密儲存並套用').disabled
+    at.button(key='generate_vault_key').click().run()
+    assert not at.exception
+    assert 'CREDENTIALS_KEY' in at.code[0].value
+    first = at.code[0].value
+    at.button(key='generate_vault_key').click().run()
+    assert at.code[0].value == first
