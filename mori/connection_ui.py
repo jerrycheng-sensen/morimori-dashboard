@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 from cryptography.fernet import Fernet
 from mori.core import AppError, TAIPEI
-from mori.providers import provider_for
+from mori.providers import provider_for, DEFAULT_META_API_VERSION
 from mori.vault import CredentialVault, FIELDS
 
 
@@ -52,12 +52,14 @@ def connection_panel(store, creds, secret, accounts, demo=False):
         vault_values, _ = vault.read()
     inventory = []
     for key, (label, sensitive, group) in FIELDS.items():
-        present = bool(creds.get(key))
+        managed_version = key == 'META_API_VERSION' and not creds.get(key)
+        effective_value = DEFAULT_META_API_VERSION if managed_version else creds.get(key)
+        present = bool(effective_value)
         inventory.append({'平台': {'meta': 'Meta', 'google': 'Google', 'line': 'LINE', 'github': 'GitHub'}[group],
                           '欄位': label,
-                          '設定狀態': '已儲存' if present else '未設定',
-                          '目前內容': '********' if present and sensitive else str(creds.get(key) or '—'),
-                          '套用來源': '加密表單' if vault_values.get(key) else ('部署 Secrets' if present else '—')})
+                          '設定狀態': '系統預設，免填' if managed_version else ('已儲存' if present else '未設定'),
+                          '目前內容': '********' if present and sensitive else str(effective_value or '—'),
+                          '套用來源': '系統管理' if managed_version else ('加密表單' if vault_values.get(key) else ('部署 Secrets' if present else '—'))})
     st.dataframe(pd.DataFrame(inventory), hide_index=True, width='stretch')
     st.caption('已儲存代表系統讀到設定；連線是否可用，請看下方各廣告帳號的實際測試結果。')
 
@@ -65,10 +67,12 @@ def connection_panel(store, creds, secret, accounts, demo=False):
                          ('google', 'Google Ads 串接（稍後設定）'), ('line', 'LINE 通知串接'),
                          ('github', 'GitHub 排程啟動設定')]:
         with st.expander(title, expanded=group == 'meta'):
+            if group == 'meta':
+                st.caption('只需填入 Meta 廣告讀取權杖。API 版本由系統管理，目前使用 ' + str(creds.get('META_API_VERSION') or DEFAULT_META_API_VERSION) + '。')
             with st.form('credential_form_' + group, clear_on_submit=True):
                 changes = {}
                 for key, (label, sensitive, field_group) in FIELDS.items():
-                    if field_group != group:
+                    if field_group != group or key == 'META_API_VERSION':
                         continue
                     changes[key] = st.text_input(label, value='', type='password' if sensitive else 'default',
                                                  placeholder='已設定；留空保留，輸入新值以更換' if creds.get(key) else '尚未設定',

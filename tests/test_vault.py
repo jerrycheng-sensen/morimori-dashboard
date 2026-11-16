@@ -60,3 +60,12 @@ def test_invalid_fields_and_masks_rejected():
 
 def test_legacy_secrets_still_work_without_vault():
     assert resolve_credentials({'META_ACCESS_TOKEN': 'legacy'}, Store(), '') == {'META_ACCESS_TOKEN': 'legacy'}
+
+
+@pytest.mark.parametrize("version", [None, ""])
+def test_meta_version_is_managed_without_manual_input(version):
+    from mori.providers import MetaProvider, DEFAULT_META_API_VERSION
+    credentials = {"META_ACCESS_TOKEN": "test-token"}
+    if version is not None:
+        credentials["META_API_VERSION"] = version
+    assert MetaProvider(credentials).root == "https://graph.facebook.com/" + DEFAULT_META_API_VERSION

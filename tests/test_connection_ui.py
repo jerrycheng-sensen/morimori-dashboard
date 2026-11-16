@@ -21,6 +21,8 @@ def test_masked_form_saves_applies_and_platform_fields_switch():
         at.button[0].click().run()
         at.radio[0].set_value('API 與權杖設定').run()
         assert not at.exception
+        assert not any(w.label == 'Meta API 版本' for w in at.text_input)
+        assert any('系統預設，免填' in d.value.to_string() for d in at.dataframe)
         token_field = next(w for w in at.text_input if w.label == 'Meta 廣告讀取權杖')
         assert token_field.proto.type == token_field.proto.PASSWORD
         token_field.set_value('secret-only-in-memory')

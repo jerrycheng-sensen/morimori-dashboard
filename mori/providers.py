@@ -36,14 +36,17 @@ def google_id(value):
     return value
 
 
+DEFAULT_META_API_VERSION = "v26.0"
+
+
 class MetaProvider:
     def __init__(self, credentials, session=None):
         self.session = session or requests.Session()
-        token, version = credentials.get("META_ACCESS_TOKEN"), credentials.get("META_API_VERSION", "")
+        token, version = credentials.get("META_ACCESS_TOKEN"), (credentials.get("META_API_VERSION") or DEFAULT_META_API_VERSION)
         if not token:
             raise AppError("尚未設定 META_ACCESS_TOKEN。")
         if not re.fullmatch(r"v\d+\.0", version):
-            raise AppError("請在 Secrets 指定仍受支援的 META_API_VERSION，例如 v26.0；不沿用舊程式的 v19.0。")
+            raise AppError("Meta API 版本格式不正確，請聯繫系統管理員檢查進階設定。")
         self.root = f"https://graph.facebook.com/{version}"
         self.headers = {"Authorization": f"Bearer {token}"}
 
