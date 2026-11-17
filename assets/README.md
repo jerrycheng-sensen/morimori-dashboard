@@ -7,3 +7,5 @@ Source: user-provided `2020森森燒肉_品牌標準LOGO.ai` (PDF-compatible Ill
 - `mori-icon.svg`: application favicon, using the first 森 glyph from the original reversed logo (page 7), on brand color #17421E.
 
 Logo paths retain the original vector artwork. No AI-generated or replacement lettering is used.
+
+- `mori-bull-icon.svg`: current application favicon, using the original 肉/cow-shaped wordmark glyph (page 7), on #17421E. Replaces the initial 森-character icon per brand guidance.
