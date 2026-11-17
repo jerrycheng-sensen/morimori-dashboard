@@ -1,6 +1,6 @@
 [theme]
-primaryColor = "#174d38"
-backgroundColor = "#f7f9f8"
+primaryColor = "#17421E"
+backgroundColor = "#f4f7f4"
 secondaryBackgroundColor = "#ffffff"
 textColor = "#173426"
 font = "sans serif"
@@ -10,3 +10,9 @@ headless = true
 
 [client]
 showErrorDetails = false
+
+[theme.sidebar]
+primaryColor = "#B8E572"
+backgroundColor = "#0B1D12"
+secondaryBackgroundColor = "#17421E"
+textColor = "#DCE8D7"

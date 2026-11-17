@@ -14,35 +14,55 @@ from mori.runner import conversion_label
 PLATFORMS = {'meta': 'Meta', 'google': 'Google Ads'}
 
 CSS = '''<style>
+:root{--mori-brand:#17421E;--mori-ink:#142b1c;--mori-accent:#b8e572;}
 html,body,[data-testid="stApp"]{font-family:"Microsoft JhengHei","微軟正黑體",sans-serif;}
-[data-testid="stAppViewContainer"]{background:#f7f9f8;}
-[data-testid="stMainBlockContainer"]{max-width:1500px;padding-top:2.2rem;padding-bottom:3rem;}
-[data-testid="stSidebar"]{background:#fff;border-right:1px solid #e3e9e5;}
-[data-testid="stSidebar"] h1{font-size:1.2rem;letter-spacing:-.03em;}
-h1{font-size:2rem!important;letter-spacing:-.045em;font-weight:750!important;}
+[data-testid="stAppViewContainer"]{background:radial-gradient(ellipse at 95% 2%,#dcebdc80,transparent 45%),linear-gradient(#17421e03 1px,transparent 1px),linear-gradient(90deg,#17421e03 1px,transparent 1px),#f4f7f4;background-size:auto,32px 32px,32px 32px,auto;}
+[data-testid="stHeader"]{background:#f4f7f4ef;border-bottom:1px solid #17421e10;}
+[data-testid="stMainBlockContainer"]{max-width:1500px;padding-top:4.6rem!important;padding-bottom:3rem;}
+h1{font-size:2.05rem!important;letter-spacing:-.035em;font-weight:750!important;color:#142b1c;}
 h2{font-size:1.25rem!important;letter-spacing:-.025em;}
 h3{font-size:1.05rem!important;}
-[data-testid="stSidebar"] [role="radiogroup"]{gap:4px;}
-[data-testid="stSidebar"] [role="radiogroup"] label{padding:9px 12px;border-radius:8px;}
-[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked){background:#e9f2ed;color:#174d38;font-weight:700;}
-[data-testid="stVerticalBlockBorderWrapper"]>div{border-color:#e1e8e3!important;border-radius:14px!important;background:#fff;}
-[data-testid="stMetric"]{background:#fff;border:1px solid #e1e8e3;border-radius:12px;padding:19px 20px;box-shadow:0 2px 3px #122b1e03;}
-[data-testid="stMetricLabel"]{color:#64756b;font-size:.85rem;}
-[data-testid="stMetricValue"]{color:#183c2c;font-weight:700;letter-spacing:-.04em;}
-[data-testid="stButton"] button,[data-testid="stDownloadButton"] button{border-radius:8px;transition:background-color 80ms,border-color 80ms;}
+[data-testid="stSidebar"]{background:radial-gradient(ellipse at 0 0,#17421E 0,transparent 70%),#0b1d12;border-right:1px solid #accf8c30;}
+[data-testid="stSidebar"] [data-testid="stSidebarContent"]{padding-top:1rem;}
+.mori-brand{padding:14px 4px 22px;margin-bottom:8px;border-bottom:1px solid #ffffff16;}
+.mori-brand img{width:214px;max-width:100%;height:auto;display:block;}
+.mori-brand span{display:block;color:#bdd0be;font-size:12px;letter-spacing:.22em;margin-top:16px;}
+[data-testid="stSidebar"] [role="radiogroup"]{gap:7px;}
+[data-testid="stSidebar"] [role="radiogroup"] label{padding:10px 12px;border:1px solid transparent;border-radius:9px;width:100%;color:#c7d5c9;transition:background 100ms;}
+[data-testid="stSidebar"] [role="radiogroup"] label:hover{background:#ffffff0b;}
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked){background:linear-gradient(100deg,#5b8b443d,#b8e5720b);color:#e6f8cf;border:1px solid #b8e57245;box-shadow:inset 3px 0 #b8e572;}
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"]{color:#94aa98;}
+[data-testid="stSidebar"] button{background:#ffffff08;color:#d3e3d3;border-color:#adcba42b;}
+[data-testid="stSidebar"] [data-testid="stExpander"]{background:transparent;border-color:#adcba42b;}
+[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"]>div{border-color:#dae5db!important;border-radius:14px!important;background:#ffffffee;box-shadow:0 4px 24px #17351c04;}
+[data-testid="stMetric"]{position:relative;overflow:hidden;background:linear-gradient(140deg,#fff,#f7faf6);border:1px solid #d9e6d9;border-radius:13px;padding:20px 22px;box-shadow:0 5px 20px #17421e07;}
+[data-testid="stMetric"]:before{content:"";position:absolute;top:0;left:22px;width:38px;height:3px;background:#7ca65f;}
+[data-testid="stMetricLabel"]{color:#617563;font-size:.85rem;}
+[data-testid="stMetricValue"]{color:#17421E;font-weight:750;letter-spacing:-.045em;}
+[data-testid="stColumn"]:first-child [data-testid="stMetric"]{background:radial-gradient(ellipse at 100% 0,#547941,#17421E 75%);border-color:#17421E;box-shadow:0 7px 22px #17421e23;}
+[data-testid="stColumn"]:first-child [data-testid="stMetric"]:before{background:#b8e572;}
+[data-testid="stColumn"]:first-child [data-testid="stMetricLabel"]{color:#c5d9bc;}
+[data-testid="stColumn"]:first-child [data-testid="stMetricValue"]{color:#f6fbed;}
+[data-testid="stButton"] button,[data-testid="stDownloadButton"] button{border-radius:9px;transition:background-color 80ms,border-color 80ms,box-shadow 80ms;}
+[data-testid="stMain"] [data-testid="stButton"] button[kind="primary"]{background:#17421E;border-color:#17421E;box-shadow:0 4px 12px #17421e22;}
 [data-testid="stButton"] button:active{transform:translateY(1px);}
-[data-testid="stDataFrame"]{border:1px solid #e3e9e5;border-radius:10px;overflow:hidden;}
-.mori-eyebrow{font-size:11px;letter-spacing:.16em;font-weight:700;color:#718378;margin-bottom:7px;}
-.mori-banner{display:flex;justify-content:space-between;align-items:center;gap:18px;border:1px solid #cfe0d5;background:linear-gradient(110deg,#eaf3ed,#f8fbf9);border-radius:12px;padding:18px 22px;margin:0 0 18px;}
-.mori-banner strong{display:block;font-size:15px;color:#174d38;}
-.mori-banner small{color:#64766a;line-height:1.8;}
-.mori-pill{white-space:nowrap;border:1px solid #c9dbcf;border-radius:20px;padding:5px 11px;color:#28553c;background:#fff;font-size:12px;}
-.mori-empty{text-align:center;padding:48px 20px;border:1px dashed #cbdcd1;border-radius:14px;background:#fff;}
-.mori-empty .symbol{margin:0 auto 14px;width:44px;height:44px;background:#eaf3ed;color:#174d38;border-radius:12px;display:grid;place-items:center;font-size:23px;}
-.mori-empty strong{display:block;font-size:18px;color:#234c36;margin-bottom:8px;}
-.mori-empty p{color:#75877c;font-size:14px;}
-@media(max-width:700px){.mori-banner{align-items:flex-start;flex-direction:column;}[data-testid="stMainBlockContainer"]{padding-top:1rem;}}
-</style>'''
+[data-testid="stDataFrame"]{border:1px solid #dce7dc;border-radius:11px;overflow:hidden;}
+.mori-banner{position:relative;isolation:isolate;overflow:hidden;display:flex;justify-content:space-between;align-items:center;gap:20px;border:1px solid #69845770;background:radial-gradient(ellipse at 85% -60%,#95bf5f6b,transparent 60%),linear-gradient(110deg,#102c17,#17421E 60%,#213d25);border-radius:17px;padding:29px 28px;margin:10px 0 20px;box-shadow:0 12px 38px #17421e16;}
+.mori-banner:before{content:"";z-index:-1;position:absolute;inset:0;background:linear-gradient(#d3edaf0b 1px,transparent 1px),linear-gradient(90deg,#d3edaf0b 1px,transparent 1px);background-size:26px 26px;mask-image:linear-gradient(90deg,transparent,#000);}
+.mori-banner:after{content:"";z-index:-1;position:absolute;width:210px;height:210px;right:50px;top:-100px;border:1px solid #c9f39e30;border-radius:50%;box-shadow:0 0 0 28px #c9f39e08,0 0 0 58px #c9f39e05;}
+.mori-kicker{color:#c3e2a6;font-size:11px;letter-spacing:.18em;margin-bottom:10px;}
+.mori-banner strong{display:block;font-size:24px;letter-spacing:-.03em;color:#f2f8ec;line-height:1.45;}
+.mori-banner small{display:block;color:#bbcfb5;line-height:1.8;margin-top:8px;font-size:13px;}
+.mori-pill{white-space:nowrap;border:1px solid #c2e59d55;border-radius:20px;padding:7px 12px;color:#d6efbd;background:#b8e5720f;font-size:12px;}
+.mori-pill:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#b8e572;box-shadow:0 0 8px #b8e57270;margin-right:8px;}
+.mori-empty{position:relative;overflow:hidden;text-align:center;padding:46px 20px;border:1px solid #d3e3d1;border-radius:15px;background:radial-gradient(ellipse at 50% 0,#e2efdc90,transparent 65%),#ffffffd9;}
+.mori-empty:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(#17421e04 1px,transparent 1px),linear-gradient(90deg,#17421e04 1px,transparent 1px);background-size:24px 24px;mask-image:linear-gradient(#000,transparent);}
+.mori-empty .symbol{position:relative;margin:0 auto 17px;width:52px;height:52px;border:1px solid #7a9c6d45;background:linear-gradient(145deg,#17421E,#2f5b2c);color:#d3edb4;border-radius:15px;box-shadow:0 8px 24px #17421e25;display:grid;place-items:center;font-size:27px;}
+.mori-empty strong{position:relative;display:block;font-size:18px;color:#17421E;margin-bottom:8px;}
+.mori-empty p{position:relative;color:#73846f;font-size:13px;}
+@media(max-width:700px){.mori-banner{align-items:flex-start;flex-direction:column;padding:23px;}.mori-banner strong{font-size:21px;}[data-testid="stMainBlockContainer"]{padding-top:4.3rem!important;}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;}}
+</style>''' 
 
 
 def filter_rows(df, project=None, query='', channels=None):
@@ -151,8 +171,8 @@ def render_report(view, keys, period, settings, names, account_by_key):
                 c.metric('訂位 CPA', f"{metric['cpa']:,.2f}" if metric['cpa'] is not None else '—')
                 d.metric('Meta 連結點擊' if platform == 'meta' else '廣告點擊', f"{metric['clicks']:,.0f}")
                 left, right = st.columns(2)
-                for container, field, title, color in [(left, 'spend', '花費趨勢', '#247653'),
-                                                        (right, 'conversions', '訂位趨勢', '#589d91')]:
+                for container, field, title, color in [(left, 'spend', '花費趨勢', '#17421E'),
+                                                        (right, 'conversions', '訂位趨勢', '#168578')]:
                     with container, st.container(border=True):
                         st.subheader(title)
                         st.caption(currency if field == 'spend' else '依平台指定事件統計')

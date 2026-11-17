@@ -6,6 +6,8 @@ import io
 import json
 import os
 import uuid
+from pathlib import Path
+import base64
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -25,7 +27,8 @@ from mori.connection_ui import connection_panel
 from mori.field_guidance import (META_ACCOUNT_GUIDANCE, GOOGLE_ACCOUNT_GUIDANCE,
                                  META_ACTION_GUIDANCE, GOOGLE_ACTION_GUIDANCE)
 
-st.set_page_config(page_title="森森廣告數據與異常提醒", page_icon="🌿", layout="wide")
+ASSETS = Path(__file__).parent / "assets"
+st.set_page_config(page_title="森森廣告管理", page_icon=(ASSETS / "mori-icon.svg").read_text(), layout="wide")
 st.markdown(DASHBOARD_CSS, unsafe_allow_html=True)
 
 
@@ -76,15 +79,15 @@ demo = str(secret("DEMO_MODE", "false")).lower() == "true"
 if demo:
     st.warning("示範模式｜以下為人工建立的示例，未串接真實廣告帳號、不儲存設定、不發送 LINE。")
 
-st.sidebar.title("🌿 森森廣告管理")
-st.sidebar.caption("系統版本：2026.11.17.14")
+logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
+st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧管理</span></div>', unsafe_allow_html=True)
+st.sidebar.caption("系統版本：2026.11.17.15")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 with st.sidebar.expander("品牌外觀"):
     logo = st.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
     if logo:
         st.image(logo, width=180)
-st.markdown('<div class="mori-eyebrow">MORIMORI · AD WORKSPACE</div>', unsafe_allow_html=True)
 st.title(page)
 st.caption("掌握廣告花費、訂位成效與專案進度" if page == "數據總覽" else "廣告數據、預算與 LINE 異常提醒集中管理")
 if st.session_state.get("save_notice"):
@@ -154,7 +157,7 @@ if page == "數據總覽":
         st.info("先到「帳號與串接」新增 Meta 或 Google Ads 帳號。")
     else:
         enabled_rules = sum(1 for r in settings['rules'] if r.get('enabled'))
-        st.markdown(f'<div class="mori-banner"><div><strong>把數字，變成下一步行動。</strong><small>分平台查看訂位與 CPA，找出值得關注的廣告活動。</small></div><span class="mori-pill">已啟用 {enabled_rules} 筆規則</span></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="mori-banner"><div><div class="mori-kicker">成效監測工作台</div><strong>每一筆投入，都看得更清楚。</strong><small>整合廣告數據與異常規則，掌握專案的下一步。</small></div><span class="mori-pill">已啟用 {enabled_rules} 筆規則</span></div>', unsafe_allow_html=True)
         with st.container(border=True):
             account_col, date_col = st.columns([1.2, 1])
             keys = account_col.multiselect("廣告帳號", list(names), default=list(names), format_func=names.get)
