@@ -18,6 +18,7 @@ from mori.accounts import (account_label, account_dependencies, delete_account, 
 from mori.providers import GoogleProvider, provider_for
 from mori.runner import check_rules, conversion_label
 from mori.storage import GitHubStore
+from mori.ui_performance import UIStore, fetch_accounts
 from mori.vault import resolve_credentials
 from mori.connection_ui import connection_panel
 from mori.field_guidance import (META_ACCOUNT_GUIDANCE, GOOGLE_ACCOUNT_GUIDANCE,
@@ -26,6 +27,8 @@ from mori.field_guidance import (META_ACCOUNT_GUIDANCE, GOOGLE_ACCOUNT_GUIDANCE,
 st.set_page_config(page_title="森森廣告數據與異常提醒", page_icon="🌿", layout="wide")
 st.markdown("""<style>
 html,body,[class*="css"],h1,h2,h3,p,button{font-family:"Microsoft JhengHei","微軟正黑體",sans-serif;}
+[data-testid="stButton"] button{transition:background-color 80ms ease,border-color 80ms ease;}
+[data-testid="stButton"] button:active{transform:translateY(1px);}
 [data-testid="stMetric"]{background:#edf4ef;padding:18px;border-radius:12px;border-left:4px solid #174d38;}
 </style>""", unsafe_allow_html=True)
 
@@ -77,6 +80,19 @@ demo = str(secret("DEMO_MODE", "false")).lower() == "true"
 if demo:
     st.warning("示範模式｜以下為人工建立的示例，未串接真實廣告帳號、不儲存設定、不發送 LINE。")
 
+st.sidebar.title("🌿 森森廣告管理")
+st.sidebar.caption("系統版本：2026.11.17.13")
+page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
+st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
+logo = st.sidebar.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
+if logo:
+    st.sidebar.image(logo, width=180)
+st.title(page)
+st.caption("廣告數據、預算與 LINE 異常提醒集中管理")
+if st.session_state.get("save_notice"):
+    st.success(st.session_state.pop("save_notice"))
+
+
 store = None
 settings_sha = None
 if demo:
@@ -84,10 +100,15 @@ if demo:
     runtime = {"runs": [], "pending": []}
 else:
     try:
-        store = GitHubStore(str(secret("STATE_REPO")), str(secret("STATE_TOKEN")), str(secret("STATE_BRANCH", "main")))
+        identity = hashlib.sha256(json.dumps([str(secret("STATE_REPO")), str(secret("STATE_TOKEN")), str(secret("STATE_BRANCH", "main"))]).encode()).hexdigest()
+        if st.session_state.get("ui_store_identity") != identity:
+            st.session_state.ui_store = UIStore(GitHubStore(str(secret("STATE_REPO")), str(secret("STATE_TOKEN")), str(secret("STATE_BRANCH", "main"))))
+            st.session_state.ui_store_identity = identity
+        store = st.session_state.ui_store
+        if st.sidebar.button("重新載入設定", help="立即讀取其他視窗的設定變更；一般操作使用此瀏覽連線的短期快取。"):
+            store.clear()
         settings, settings_sha = store.settings()
         settings = validate_settings(settings)
-        runtime, _ = store.runtime()
     except (AppError, ValueError) as exc:
         st.error(str(exc))
         st.stop()
@@ -111,17 +132,6 @@ def save_settings(updated, notice=None, rule_id=None):
         st.error("儲存失敗：請確認欄位完整、日期與金額正確；若有其他人更新設定，請重新整理頁面後再試。")
 
 
-st.sidebar.title("🌿 森森廣告管理")
-st.sidebar.caption("系統版本：2026.11.16.12")
-page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
-st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
-logo = st.sidebar.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
-if logo:
-    st.sidebar.image(logo, width=180)
-st.title(page)
-st.caption("廣告數據、預算與 LINE 異常提醒集中管理")
-if st.session_state.get("save_notice"):
-    st.success(st.session_state.pop("save_notice"))
 
 account_by_key = {a["key"]: a for a in settings["accounts"]}
 names = {a["key"]: a["name"] for a in settings["accounts"]}
@@ -157,60 +167,65 @@ if page == "數據總覽":
                     if demo:
                         reports = [r for r in demo_reports(*period) if r["rows"][0]["account_key"] in keys]
                     else:
-                        for key in keys:
-                            try:
-                                report = fetch_report(account_by_key[key], *period)
-                                reports.append(report)
-                            except AppError as exc:
-                                errors.append(f"{names[key]}：{exc}")
+                        reports, errors = fetch_accounts(
+                            [account_by_key[key] for key in keys],
+                            lambda account: fetch_report(account, *period))
                 st.session_state.report_view = {"reports": reports, "errors": errors, "keys": keys, "period": tuple(map(str, period)), "at": datetime.now(TAIPEI).isoformat()}
-        view = st.session_state.get("report_view")
-        if view:
-            if tuple(map(str, period)) != view["period"] or keys != view["keys"]:
-                st.info("篩選已變更，按「讀取數據」更新；下方仍是上次查詢結果。")
-            st.caption(f"資料區間：{' ～ '.join(view['period'])}｜讀取時間：{view['at']}")
-            for error in view["errors"]:
-                st.error(error)
-            for report in view["reports"]:
-                st.caption(f"帳號時區：{report.get('timezone')}｜幣別：{report['currency']}")
-            df = reports_table(view["reports"])
-            if df.empty:
-                st.info("成功回傳的帳號在此期間沒有資料；讀取失敗的帳號不列入零值。")
-            else:
-                channels = st.multiselect("廣告類型", sorted(df.channel.unique()), default=sorted(df.channel.unique()))
-                shown = df[df.channel.isin(channels)].copy()
-                for currency in shown.currency.unique():
-                    part = shown[shown.currency == currency]
-                    st.subheader(currency)
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("廣告後台花費", f"{part.spend.sum():,.2f}")
-                    c2.metric("曝光", f"{part.impressions.sum():,.0f}")
-                    c3.metric("點擊／Meta 連結點擊", f"{part.clicks.sum():,.0f}")
-                    # 平台歸因、轉換定義不同，不把雙平台轉換數當作去重的實際訂位。
-                    c4.metric("回傳資料列", f"{len(part):,}")
-                    trend = part.groupby(["date", "platform"])["spend"].sum().unstack(fill_value=0)
-                    st.line_chart(trend)
-                summary_rows = []
-                for (key, campaign_id, campaign, currency), part in shown.groupby(["account_key", "campaign_id", "campaign_name", "currency"], dropna=False):
-                    complete = part.conversions.notna().all()
-                    conversions = part.conversions.sum() if complete else None
-                    summary_rows.append({"帳號": names.get(key, key), "活動 ID": campaign_id, "活動": campaign, "幣別": currency,
-                                         "花費": part.spend.sum(), "轉換": conversions,
-                                         "CPA": part.spend.sum() / conversions if conversions else None,
-                                         "曝光": part.impressions.sum(), "點擊": part.clicks.sum(),
-                                         "CTR %": 100 * part.clicks.sum() / part.impressions.sum() if part.impressions.sum() else None,
-                                         "CPC": part.spend.sum() / part.clicks.sum() if part.clicks.sum() else None})
-                summary_df = pd.DataFrame(summary_rows)
-                st.dataframe(summary_df, hide_index=True, use_container_width=True)
-                for key in view["keys"]:
-                    if key in account_by_key:
-                        st.caption(f"{names[key]} 轉換口徑：{conversion_label(account_by_key[key])}")
-                st.caption("花費為平台回傳的帳號幣別金額，未另外加計代理商服務費與稅；不等於儲值餘額。平台歸因轉換不等於實際到店，跨平台轉換不去重。")
-                buffer = io.BytesIO()
-                with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                    summary_df.to_excel(writer, index=False, sheet_name="活動總覽")
-                    shown.drop(columns=["available_actions"], errors="ignore").to_excel(writer, index=False, sheet_name="每日明細")
-                st.download_button("下載 Excel 報表", buffer.getvalue(), "mori-ad-report.xlsx")
+        @st.fragment
+        def render_report(view):
+            if view:
+                if tuple(map(str, period)) != view["period"] or keys != view["keys"]:
+                    st.info("篩選已變更，按「讀取數據」更新；下方仍是上次查詢結果。")
+                st.caption(f"資料區間：{' ～ '.join(view['period'])}｜讀取時間：{view['at']}")
+                for error in view["errors"]:
+                    st.error(error)
+                for report in view["reports"]:
+                    st.caption(f"帳號時區：{report.get('timezone')}｜幣別：{report['currency']}")
+                df = reports_table(view["reports"])
+                if df.empty:
+                    st.info("成功回傳的帳號在此期間沒有資料；讀取失敗的帳號不列入零值。")
+                else:
+                    channels = st.multiselect("廣告類型", sorted(df.channel.unique()), default=sorted(df.channel.unique()))
+                    shown = df[df.channel.isin(channels)].copy()
+                    for currency in shown.currency.unique():
+                        part = shown[shown.currency == currency]
+                        st.subheader(currency)
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("廣告後台花費", f"{part.spend.sum():,.2f}")
+                        c2.metric("曝光", f"{part.impressions.sum():,.0f}")
+                        c3.metric("點擊／Meta 連結點擊", f"{part.clicks.sum():,.0f}")
+                        # 平台歸因、轉換定義不同，不把雙平台轉換數當作去重的實際訂位。
+                        c4.metric("回傳資料列", f"{len(part):,}")
+                        trend = part.groupby(["date", "platform"])["spend"].sum().unstack(fill_value=0)
+                        st.line_chart(trend)
+                    summary_rows = []
+                    for (key, campaign_id, campaign, currency), part in shown.groupby(["account_key", "campaign_id", "campaign_name", "currency"], dropna=False):
+                        complete = part.conversions.notna().all()
+                        conversions = part.conversions.sum() if complete else None
+                        summary_rows.append({"帳號": names.get(key, key), "活動 ID": campaign_id, "活動": campaign, "幣別": currency,
+                                             "花費": part.spend.sum(), "轉換": conversions,
+                                             "CPA": part.spend.sum() / conversions if conversions else None,
+                                             "曝光": part.impressions.sum(), "點擊": part.clicks.sum(),
+                                             "CTR %": 100 * part.clicks.sum() / part.impressions.sum() if part.impressions.sum() else None,
+                                             "CPC": part.spend.sum() / part.clicks.sum() if part.clicks.sum() else None})
+                    summary_df = pd.DataFrame(summary_rows)
+                    st.dataframe(summary_df, hide_index=True, use_container_width=True)
+                    for key in view["keys"]:
+                        if key in account_by_key:
+                            st.caption(f"{names[key]} 轉換口徑：{conversion_label(account_by_key[key])}")
+                    st.caption("花費為平台回傳的帳號幣別金額，未另外加計代理商服務費與稅；不等於儲值餘額。平台歸因轉換不等於實際到店，跨平台轉換不去重。")
+                    export_key = (view["at"], tuple(channels))
+                    export = st.session_state.get("report_export")
+                    if export is None or export[0] != export_key:
+                        buffer = io.BytesIO()
+                        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+                            summary_df.to_excel(writer, index=False, sheet_name="活動總覽")
+                            shown.drop(columns=["available_actions"], errors="ignore").to_excel(writer, index=False, sheet_name="每日明細")
+                        export = (export_key, buffer.getvalue())
+                        st.session_state.report_export = export
+                    st.download_button("下載 Excel 報表", export[1], "mori-ad-report.xlsx", on_click="ignore")
+
+        render_report(st.session_state.get("report_view"))
 
 elif page == "帳號與串接":
     st.info("平台權杖請到左側「API 與權杖設定」集中填寫；本頁只管理廣告帳號與訂位事件。")
@@ -506,13 +521,20 @@ elif page == "通知排程":
     st.info("若沒有設定 SOURCE_TOKEN，仍可直接在 GitHub 的 Actions 頁手動執行；自動巡檢不受影響。正式發送另需在 GitHub Secrets 設定 LIVE_NOTIFICATIONS_ENABLED=true；未開放時只會預覽。")
 
 elif page == "執行紀錄":
-    if st.button("重新整理紀錄"):
-        st.rerun()
+    st.button("重新整理紀錄")
+    try:
+        runtime = {"runs": [], "pending": []} if demo else store.runtime()[0]
+    except AppError as exc:
+        st.error(str(exc))
+        st.stop()
     runs = runtime.get("runs", [])
     if runs:
         st.dataframe(pd.DataFrame([{k: r.get(k) for k in ["at", "slot", "mode", "status", "anomaly_count", "accepted_batches"]} for r in runs]), hide_index=True, use_container_width=True)
-        index = st.selectbox("查看某次詳細結果", list(range(len(runs))), format_func=lambda i: str(runs[i]["at"]))
-        st.json(runs[index])
+        @st.fragment
+        def render_run_detail():
+            index = st.selectbox("查看某次詳細結果", list(range(len(runs))), format_func=lambda i: str(runs[i]["at"]))
+            st.json(runs[index])
+        render_run_detail()
     else:
         st.info("尚無執行紀錄；先儲存規則，再從通知排程啟動一次預覽。")
     pending = runtime.get("pending", [])

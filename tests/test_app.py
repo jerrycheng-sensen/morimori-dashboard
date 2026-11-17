@@ -70,3 +70,30 @@ def test_rule_delete_requires_confirmation_and_new_button_opens_empty_form(monke
     assert not app.exception
     assert app.selectbox(key='rule_editor_choice').value == '新增規則'
     assert next(x for x in app.text_input if x.label == '規則名稱').value == ''
+
+
+def test_live_navigation_reuses_reads_and_only_execution_page_loads_runtime(monkeypatch):
+    from unittest.mock import patch
+    from mori.storage import GitHubStore
+    from mori.core import default_settings
+    monkeypatch.delenv('DEMO_MODE', raising=False)
+    with patch.object(GitHubStore, 'settings', return_value=(default_settings(), 's')) as settings_read, \
+         patch.object(GitHubStore, 'read', return_value=({}, None)) as vault_read, \
+         patch.object(GitHubStore, 'runtime', return_value=({'runs': [], 'pending': []}, None)) as runtime_read:
+        app = AppTest.from_file(APP, default_timeout=15)
+        app.secrets.update({'STATE_REPO': 'owner/private', 'STATE_TOKEN': 'test-only', 'CREDENTIALS_KEY': ''})
+        app.run()
+        for page in ['通知排程', '專案預算', '異常規則', '帳號與串接']:
+            app.sidebar.radio[0].set_value(page).run()
+            assert not app.exception
+        assert settings_read.call_count == 1
+        assert vault_read.call_count == 1
+        assert runtime_read.call_count == 0
+        app.sidebar.radio[0].set_value('執行紀錄').run()
+        assert runtime_read.call_count == 1
+        next(x for x in app.button if x.label == '重新整理紀錄').click().run()
+        assert runtime_read.call_count == 2
+        next(x for x in app.sidebar.button if x.label == '重新載入設定').click().run()
+        assert settings_read.call_count == 2
+        assert vault_read.call_count == 2
+        assert not app.exception
