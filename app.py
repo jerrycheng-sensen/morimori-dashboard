@@ -19,18 +19,14 @@ from mori.providers import GoogleProvider, provider_for
 from mori.runner import check_rules, conversion_label
 from mori.storage import GitHubStore
 from mori.ui_performance import UIStore, fetch_accounts
+from mori.dashboard import CSS as DASHBOARD_CSS, render_report as render_overview
 from mori.vault import resolve_credentials
 from mori.connection_ui import connection_panel
 from mori.field_guidance import (META_ACCOUNT_GUIDANCE, GOOGLE_ACCOUNT_GUIDANCE,
                                  META_ACTION_GUIDANCE, GOOGLE_ACTION_GUIDANCE)
 
 st.set_page_config(page_title="森森廣告數據與異常提醒", page_icon="🌿", layout="wide")
-st.markdown("""<style>
-html,body,[class*="css"],h1,h2,h3,p,button{font-family:"Microsoft JhengHei","微軟正黑體",sans-serif;}
-[data-testid="stButton"] button{transition:background-color 80ms ease,border-color 80ms ease;}
-[data-testid="stButton"] button:active{transform:translateY(1px);}
-[data-testid="stMetric"]{background:#edf4ef;padding:18px;border-radius:12px;border-left:4px solid #174d38;}
-</style>""", unsafe_allow_html=True)
+st.markdown(DASHBOARD_CSS, unsafe_allow_html=True)
 
 
 def secret(key, default=""):
@@ -81,14 +77,16 @@ if demo:
     st.warning("示範模式｜以下為人工建立的示例，未串接真實廣告帳號、不儲存設定、不發送 LINE。")
 
 st.sidebar.title("🌿 森森廣告管理")
-st.sidebar.caption("系統版本：2026.11.17.13")
+st.sidebar.caption("系統版本：2026.11.17.14")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
-logo = st.sidebar.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
-if logo:
-    st.sidebar.image(logo, width=180)
+with st.sidebar.expander("品牌外觀"):
+    logo = st.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
+    if logo:
+        st.image(logo, width=180)
+st.markdown('<div class="mori-eyebrow">MORIMORI · AD WORKSPACE</div>', unsafe_allow_html=True)
 st.title(page)
-st.caption("廣告數據、預算與 LINE 異常提醒集中管理")
+st.caption("掌握廣告花費、訂位成效與專案進度" if page == "數據總覽" else "廣告數據、預算與 LINE 異常提醒集中管理")
 if st.session_state.get("save_notice"):
     st.success(st.session_state.pop("save_notice"))
 
@@ -155,9 +153,13 @@ if page == "數據總覽":
     if not settings["accounts"]:
         st.info("先到「帳號與串接」新增 Meta 或 Google Ads 帳號。")
     else:
-        keys = st.multiselect("廣告帳號", list(names), default=list(names), format_func=names.get)
-        today = datetime.now(TAIPEI).date()
-        period = st.date_input("查詢區間（依各廣告帳號時區）", (today - timedelta(days=7), today - timedelta(days=1)), max_value=today)
+        enabled_rules = sum(1 for r in settings['rules'] if r.get('enabled'))
+        st.markdown(f'<div class="mori-banner"><div><strong>把數字，變成下一步行動。</strong><small>分平台查看訂位與 CPA，找出值得關注的廣告活動。</small></div><span class="mori-pill">已啟用 {enabled_rules} 筆規則</span></div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            account_col, date_col = st.columns([1.2, 1])
+            keys = account_col.multiselect("廣告帳號", list(names), default=list(names), format_func=names.get)
+            today = datetime.now(TAIPEI).date()
+            period = date_col.date_input("查詢區間（依各廣告帳號時區）", (today - timedelta(days=7), today - timedelta(days=1)), max_value=today)
         if st.button("讀取數據", type="primary"):
             if len(period) != 2 or not keys:
                 st.error("請選擇完整日期與至少一個帳號。")
@@ -172,60 +174,9 @@ if page == "數據總覽":
                             lambda account: fetch_report(account, *period))
                 st.session_state.report_view = {"reports": reports, "errors": errors, "keys": keys, "period": tuple(map(str, period)), "at": datetime.now(TAIPEI).isoformat()}
         @st.fragment
-        def render_report(view):
-            if view:
-                if tuple(map(str, period)) != view["period"] or keys != view["keys"]:
-                    st.info("篩選已變更，按「讀取數據」更新；下方仍是上次查詢結果。")
-                st.caption(f"資料區間：{' ～ '.join(view['period'])}｜讀取時間：{view['at']}")
-                for error in view["errors"]:
-                    st.error(error)
-                for report in view["reports"]:
-                    st.caption(f"帳號時區：{report.get('timezone')}｜幣別：{report['currency']}")
-                df = reports_table(view["reports"])
-                if df.empty:
-                    st.info("成功回傳的帳號在此期間沒有資料；讀取失敗的帳號不列入零值。")
-                else:
-                    channels = st.multiselect("廣告類型", sorted(df.channel.unique()), default=sorted(df.channel.unique()))
-                    shown = df[df.channel.isin(channels)].copy()
-                    for currency in shown.currency.unique():
-                        part = shown[shown.currency == currency]
-                        st.subheader(currency)
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("廣告後台花費", f"{part.spend.sum():,.2f}")
-                        c2.metric("曝光", f"{part.impressions.sum():,.0f}")
-                        c3.metric("點擊／Meta 連結點擊", f"{part.clicks.sum():,.0f}")
-                        # 平台歸因、轉換定義不同，不把雙平台轉換數當作去重的實際訂位。
-                        c4.metric("回傳資料列", f"{len(part):,}")
-                        trend = part.groupby(["date", "platform"])["spend"].sum().unstack(fill_value=0)
-                        st.line_chart(trend)
-                    summary_rows = []
-                    for (key, campaign_id, campaign, currency), part in shown.groupby(["account_key", "campaign_id", "campaign_name", "currency"], dropna=False):
-                        complete = part.conversions.notna().all()
-                        conversions = part.conversions.sum() if complete else None
-                        summary_rows.append({"帳號": names.get(key, key), "活動 ID": campaign_id, "活動": campaign, "幣別": currency,
-                                             "花費": part.spend.sum(), "轉換": conversions,
-                                             "CPA": part.spend.sum() / conversions if conversions else None,
-                                             "曝光": part.impressions.sum(), "點擊": part.clicks.sum(),
-                                             "CTR %": 100 * part.clicks.sum() / part.impressions.sum() if part.impressions.sum() else None,
-                                             "CPC": part.spend.sum() / part.clicks.sum() if part.clicks.sum() else None})
-                    summary_df = pd.DataFrame(summary_rows)
-                    st.dataframe(summary_df, hide_index=True, use_container_width=True)
-                    for key in view["keys"]:
-                        if key in account_by_key:
-                            st.caption(f"{names[key]} 轉換口徑：{conversion_label(account_by_key[key])}")
-                    st.caption("花費為平台回傳的帳號幣別金額，未另外加計代理商服務費與稅；不等於儲值餘額。平台歸因轉換不等於實際到店，跨平台轉換不去重。")
-                    export_key = (view["at"], tuple(channels))
-                    export = st.session_state.get("report_export")
-                    if export is None or export[0] != export_key:
-                        buffer = io.BytesIO()
-                        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                            summary_df.to_excel(writer, index=False, sheet_name="活動總覽")
-                            shown.drop(columns=["available_actions"], errors="ignore").to_excel(writer, index=False, sheet_name="每日明細")
-                        export = (export_key, buffer.getvalue())
-                        st.session_state.report_export = export
-                    st.download_button("下載 Excel 報表", export[1], "mori-ad-report.xlsx", on_click="ignore")
-
-        render_report(st.session_state.get("report_view"))
+        def overview_fragment(view):
+            render_overview(view, keys, period, settings, names, account_by_key)
+        overview_fragment(st.session_state.get("report_view"))
 
 elif page == "帳號與串接":
     st.info("平台權杖請到左側「API 與權杖設定」集中填寫；本頁只管理廣告帳號與訂位事件。")
