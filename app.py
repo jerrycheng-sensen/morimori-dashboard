@@ -28,7 +28,7 @@ from mori.field_guidance import (META_ACCOUNT_GUIDANCE, GOOGLE_ACCOUNT_GUIDANCE,
                                  META_ACTION_GUIDANCE, GOOGLE_ACTION_GUIDANCE)
 
 ASSETS = Path(__file__).parent / "assets"
-st.set_page_config(page_title="森森廣告管理", page_icon=(ASSETS / "mori-bull-icon.svg").read_text(), layout="wide")
+st.set_page_config(page_title="廣告智慧儀表板", page_icon=(ASSETS / "mori-bull-icon.svg").read_text(), layout="wide")
 st.markdown(DASHBOARD_CSS, unsafe_allow_html=True)
 
 
@@ -80,8 +80,8 @@ if demo:
     st.warning("示範模式｜以下為人工建立的示例，未串接真實廣告帳號、不儲存設定、不發送 LINE。")
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
-st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧管理</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.17.16")
+st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
+st.sidebar.caption("系統版本：2026.11.17.17")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 with st.sidebar.expander("品牌外觀"):
@@ -512,3 +512,4 @@ elif page == "執行紀錄":
                 st.rerun()
             except AppError as exc:
                 st.error(str(exc))
+
