@@ -378,11 +378,19 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
         if result and result.get('until'):
             st.caption(f"{data['currency'] or '帳號幣別'}｜資料 {result['since']} ～ {result['until']}｜時區 {result.get('timezone') or '未回傳'}")
             rows = result['rows']
+            if result.get('spend_basis') == 'meta_ad_whole_period':
+                st.caption(f"核對口徑：每則廣告的整段走期花費｜{len(rows)} 則廣告｜加總 {result['currency']} {result['spend_raw']}。未先將每日金額取整。")
             if rows:
                 df = pd.DataFrame(rows)
-                columns = [k for k in ['date', 'channel', 'ad_type', 'attribution_unit', 'campaign_name', 'adset_name', 'ad_id', 'ad_name', 'asset_group_name', 'asset_group_id', 'headlines', 'descriptions', 'paths', 'spend', 'currency'] if k in df]
-                st.dataframe(df[columns].rename(columns={'date': '日期', 'campaign_name': '廣告活動' if account['platform'] == 'google' else '行銷活動', 'adset_name': '廣告群組' if account['platform'] == 'google' else '廣告組合',
-                                                        'ad_name': '廣告', 'asset_group_name': '素材群組', 'asset_group_id': '素材群組 ID', 'ad_type': '廣告格式', 'attribution_unit': '花費認列單位', 'channel': '類型', 'ad_id': '廣告 ID', 'headlines': '目前標題', 'descriptions': '目前說明', 'paths': '目前路徑', 'spend': '花費', 'currency': '幣別'}), hide_index=True, width='stretch')
+                columns = [k for k in ['date', 'date_stop', 'channel', 'ad_type', 'attribution_unit', 'campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'ad_id', 'ad_name', 'asset_group_name', 'asset_group_id', 'headlines', 'descriptions', 'paths', 'spend_raw', 'spend', 'currency'] if k in df]
+                detail = df[columns].rename(columns={'date': '資料開始日' if result.get('spend_basis') == 'meta_ad_whole_period' else '日期', 'date_stop': '資料結束日', 'campaign_id': '活動 ID', 'adset_id': '群組 ID', 'campaign_name': '廣告活動' if account['platform'] == 'google' else '行銷活動', 'adset_name': '廣告群組' if account['platform'] == 'google' else '廣告組合',
+                                                        'ad_name': '廣告', 'asset_group_name': '素材群組', 'asset_group_id': '素材群組 ID', 'ad_type': '廣告格式', 'attribution_unit': '花費認列單位', 'channel': '類型', 'ad_id': '廣告 ID', 'headlines': '目前標題', 'descriptions': '目前說明', 'paths': '目前路徑', 'spend_raw': 'API 原始花費', 'spend': '花費', 'currency': '幣別'})
+                st.dataframe(detail, hide_index=True, width='stretch')
+                # Neutralize formula-leading text before opening an exported CSV in Excel.
+                export = detail.map(lambda v: "'" + v if isinstance(v, str) and v.lstrip().startswith(('=', '+', '-', '@')) else v)
+                st.download_button('下載花費核對明細 CSV', export.to_csv(index=False).encode('utf-8-sig'),
+                                   file_name=f"spend-{plan['id']}-{result['since']}-{result['until']}.csv",
+                                   mime='text/csv', key='budget_spend_export_' + plan['id'])
             else:
                 st.info('此走期與條件沒有符合的廣告。請核對篩選條件。')
         elif result and result.get('not_started'):

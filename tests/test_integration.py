@@ -350,3 +350,41 @@ def test_meta_rate_limit_message_is_distinct_from_permissions_and_does_not_leak_
         request_json(session,'GET','https://graph.facebook.com/v26.0/act_1/insights')
     assert 'SECRET_TOKEN' not in str(error.value)
     assert '檢查授權' not in str(error.value)
+
+
+def test_meta_budget_reads_whole_period_keeps_raw_cost_and_same_named_ads():
+    item = {'date_start': '2026-09-29', 'date_stop': '2026-11-18', 'ad_id': '101',
+            'ad_name': '感謝祭第5彈', 'spend': '123.45'}
+    session = Session([Response({'currency': 'TWD', 'timezone_name': 'Asia/Taipei'}),
+                       Response({'data': [item], 'paging': {'next': 'untrusted', 'cursors': {'after': 'next'}}}),
+                       Response({'data': [{**item, 'ad_id': '102', 'spend': '456.78'}]})])
+    report = MetaProvider({'META_ACCESS_TOKEN': 'secret'}, session).fetch_budget(account(), '2026-09-29', '2026-11-18')
+    assert report['spend_basis'] == 'meta_ad_whole_period'
+    assert len(report['rows']) == 2  # Equal names do not make them the same ad.
+    assert [r['spend_raw'] for r in report['rows']] == ['123.45', '456.78']
+    assert all(r['conversions'] is None for r in report['rows'])
+    for _, _, args in session.calls[1:]:
+        assert args['params']['time_increment'] == 'all_days'
+        assert 'actions' not in args['params']['fields']
+        assert json.loads(args['params']['time_range']) == {'since': '2026-09-29', 'until': '2026-11-18'}
+    daily = Session([Response({'currency': 'TWD'}), Response({'data': []})])
+    MetaProvider({'META_ACCESS_TOKEN': 'secret'}, daily).fetch(account(), '2026-09-29', '2026-11-18')
+    assert daily.calls[1][2]['params']['time_increment'] == 1
+
+
+@pytest.mark.parametrize('patch', [{'spend': None}, {'spend': 'NaN'}, {'spend': '-1'},
+                                  {'date_stop': '2026-11-17'}, {'ad_id': None}])
+def test_meta_budget_rejects_invalid_money_period_or_identity(patch):
+    item = {'date_start': '2026-09-29', 'date_stop': '2026-11-18', 'ad_id': '101', 'spend': '1', **patch}
+    session = Session([Response({'currency': 'TWD'}), Response({'data': [item]})])
+    with pytest.raises(AppError):
+        MetaProvider({'META_ACCESS_TOKEN': 'secret'}, session).fetch_budget(account(), '2026-09-29', '2026-11-18')
+
+
+def test_meta_budget_duplicate_id_across_pages_fails_closed():
+    item = {'date_start': '2026-09-29', 'date_stop': '2026-11-18', 'ad_id': '101', 'spend': '1'}
+    session = Session([Response({'currency': 'TWD'}),
+                       Response({'data': [item], 'paging': {'next': 'next', 'cursors': {'after': 'next'}}}),
+                       Response({'data': [item]})])
+    with pytest.raises(AppError, match='重複'):
+        MetaProvider({'META_ACCESS_TOKEN': 'secret'}, session).fetch_budget(account(), '2026-09-29', '2026-11-18')

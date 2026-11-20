@@ -172,3 +172,15 @@ def test_period_and_advertising_states_are_independent_and_include_date_boundari
     assert period_state('2026-11-01','2026-11-19',today) == '已結案'
     assert advertising_state([ended, {'start':'2026-11-21','end':'2026-12-01'}],today) == '準備中'
     assert advertising_state([ended, {'start':'2026-11-20','end':'2026-12-01'}],today) == '進行中'
+
+
+def test_budget_sums_original_decimal_cost_without_per_row_rounding():
+    s = sample()
+    def fetch(account, start, end):
+        return {'currency': 'TWD', 'spend_basis': 'meta_ad_whole_period', 'rows': [
+            {'campaign_name': '感謝祭', 'spend': .1, 'spend_raw': '0.10', 'currency': 'TWD'},
+            {'campaign_name': '感謝祭', 'spend': .2, 'spend_raw': '0.20', 'currency': 'TWD'},
+            {'campaign_name': 'other', 'spend': 99, 'currency': 'TWD'}]}
+    r = collect_spend([s['projects'][0]], {'m': s['accounts'][0]}, fetch, date(2026,11,20))['meta']
+    assert r['spend_raw'] == '0.30' and r['spend'] == .3
+    assert r['spend_basis'] == 'meta_ad_whole_period'

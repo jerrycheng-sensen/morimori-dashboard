@@ -6,12 +6,13 @@ import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 
 from mori.core import AppError
 
 
 def configuration_key(settings):
-    return hashlib.sha256(json.dumps(['google-attribution-v3-include-today', settings.get('projects', []), settings.get('project_groups', []),
+    return hashlib.sha256(json.dumps(['meta-whole-period-v4-include-today', settings.get('projects', []), settings.get('project_groups', []),
                                      settings.get('accounts', [])], sort_keys=True).encode()).hexdigest()
 
 
@@ -128,11 +129,19 @@ def collect_spend(plans, accounts, fetch, today):
         currencies = {r['currency'] for r in rows}
         if len(currencies) > 1 or (currencies and report['currency'] not in currencies):
             raise AppError('回傳資料包含不同幣別，已停止加總。')
-        spend = sum(float(r['spend']) for r in rows)
+        try:
+            costs = [Decimal(str(r.get('spend_raw', r['spend']))) for r in rows]
+        except (InvalidOperation, ValueError, KeyError):
+            raise AppError('回傳花費格式不正確，已停止加總。') from None
+        if any(not cost.is_finite() or cost < 0 for cost in costs):
+            raise AppError('回傳非有效或負花費，請先核對平台帳務調整。')
+        total = sum(costs, Decimal('0'))
+        spend = float(total)
         if spend < 0:
             raise AppError('回傳負花費，請先核對平台帳務調整。')
         return {'spend': spend, 'currency': report['currency'], 'since': str(start), 'until': str(end),
-                'rows': rows, 'timezone': report.get('timezone'), 'warnings': warnings, 'includes_today': end == today}
+                'rows': rows, 'timezone': report.get('timezone'), 'warnings': warnings, 'includes_today': end == today,
+                'spend_raw': str(total), 'spend_basis': report.get('spend_basis')}
     results = {}
     # Several projects often share the same account/window. Fetch once, then
     # apply each plan's attribution independently; never share across accounts.

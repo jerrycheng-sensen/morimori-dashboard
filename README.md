@@ -309,3 +309,29 @@ is not installed; no proprietary font binary is bundled. AGENTS.md records the
 font convention for future changes.
 Validation: 91 tests pass, including real-button navigation through save, preview,
 transfer and reversal flows. The deployed appearance still needs to load .28.
+
+### Meta budget cost precision and reconciliation (2026.11.20.29)
+
+Meta project budgets now request ad-level Insights with time_increment=all_days,
+using the exact advertising window, instead of adding per-day spend values.
+Overview trends and anomaly checks retain their daily query. Budget requests only
+ask for cost and attribution identity, without unnecessary conversion metrics.
+Raw spend strings are retained and summed with Decimal before display. Missing,
+nonfinite or negative cost, incorrect returned dates, missing IDs and duplicate ad
+IDs across pages fail closed. Ads sharing a name remain separate IDs.
+
+The budget detail expander shows the matched ad count, whole-period basis, raw
+cost, IDs and start/end dates, with a formula-neutralized CSV download for audit.
+The configuration marker invalidates older session budget results on upgrade;
+there is still no minute polling or automatic ad-budget mutation.
+
+Evidence: the user-supplied Meta export for 2026-09-29 through 2026-11-18 has 37
+ad rows whose Decimal spend sum is TWD 92,166, matching the supplied Ads Manager
+screenshot. The prior dashboard screenshot shows 92,168. Daily accumulation is
+an observed query difference, NOT a proven explanation of the two-dollar gap.
+No manual correction or hard-coded spend has been introduced. Live API output
+and ad IDs still need reconciliation; the export does not include ad IDs.
+Validation: 99 tests pass, including whole-period request/pagination, same-name
+ads, duplicate IDs, invalid money/dates, Decimal summation and existing UI,
+Google attribution, ledger and anomaly behavior. Mock tests do not establish that
+the deployed API result equals the user's export.

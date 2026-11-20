@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 import requests
 
@@ -56,6 +57,13 @@ class MetaProvider:
         return request_json(self.session, "GET", f"{self.root}/{path}", headers=self.headers, params=params)
 
     def fetch(self, account, start, end):
+        return self._fetch(account, start, end, budget=False)
+
+    def fetch_budget(self, account, start, end):
+        """Read each ad's whole-period cost, rather than adding daily costs."""
+        return self._fetch(account, start, end, budget=True)
+
+    def _fetch(self, account, start, end, budget):
         start, end = check_dates(start, end)
         account_id = "act_" + str(account["account_id"]).removeprefix("act_")
         if not re.fullmatch(r"act_\d+", account_id):
@@ -65,13 +73,29 @@ class MetaProvider:
         if not currency:
             raise AppError("Meta 未回傳帳號幣別，已停止加總。")
         params = {"level": "ad", "fields": "date_start,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,inline_link_clicks,actions,action_values",
-                  "time_range": json.dumps({"since": start, "until": end}), "time_increment": 1,
+                  "time_range": json.dumps({"since": start, "until": end}), "time_increment": "all_days" if budget else 1,
                   "use_unified_attribution_setting": "true", "action_report_time": "impression", "limit": 500}
+        if budget:
+            params['fields'] = 'date_start,date_stop,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend'
         rows, seen_cursors = [], set()
+        seen_ads = set()
         action = account.get("meta_action_type", "").strip()
         while True:
             data = self._get(f"{account_id}/insights", params)
             for item in data.get("data", []):
+                if budget:
+                    ad_id = item.get('ad_id')
+                    if not ad_id or ad_id in seen_ads:
+                        raise AppError('Meta 整段花費缺少廣告 ID 或重複回傳，已停止加總。')
+                    seen_ads.add(ad_id)
+                    if item.get('date_start') != start or item.get('date_stop') != end:
+                        raise AppError('Meta 回傳走期與查詢區間不同，已停止加總。')
+                    try:
+                        cost = Decimal(str(item['spend']))
+                    except (KeyError, InvalidOperation, ValueError):
+                        raise AppError('Meta 未回傳有效花費，未當成零值。') from None
+                    if not cost.is_finite() or cost < 0:
+                        raise AppError('Meta 回傳非有效或負數花費，已停止加總。')
                 actions = {x["action_type"]: number(x.get("value")) for x in item.get("actions", [])}
                 values = {x["action_type"]: number(x.get("value")) for x in item.get("action_values", [])}
                 rows.append({"account_key": account["key"], "platform": "meta", "date": item["date_start"],
@@ -80,9 +104,12 @@ class MetaProvider:
                              "ad_id": item.get("ad_id"), "ad_name": item.get("ad_name", ""), "channel": "META",
                              "currency": currency, "spend": number(item.get("spend")),
                              "impressions": number(item.get("impressions")), "clicks": number(item.get("inline_link_clicks")),
-                             "conversions": actions.get(action, 0.0) if action else None,
-                             "conversion_value": values.get(action, 0.0) if action else None,
+                             "conversions": actions.get(action, 0.0) if action and not budget else None,
+                             "conversion_value": values.get(action, 0.0) if action and not budget else None,
                              "available_actions": sorted(actions)})
+                if budget:
+                    rows[-1].update(spend_raw=str(item['spend']), date_stop=end,
+                                    attribution_unit='每則廣告／整段走期')
             paging = data.get("paging", {})
             if not paging.get("next"):
                 break
@@ -93,7 +120,8 @@ class MetaProvider:
             # 不跟隨含權杖的 next URL；只在同一官方 endpoint 更新 cursor。
             params["after"] = cursor
         return {"rows": rows, "currency": currency, "timezone": info.get("timezone_name", "未提供"),
-                "account_name": info.get("name", account["name"]), "conversion_ready": conversion_ready(account)}
+                "account_name": info.get("name", account["name"]), "conversion_ready": conversion_ready(account) if not budget else False,
+                "spend_basis": "meta_ad_whole_period" if budget else "daily"}
 
 
 DEFAULT_GOOGLE_API_VERSION = "v26"
