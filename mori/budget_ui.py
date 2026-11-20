@@ -1,6 +1,7 @@
 """Project budget cards with independent activity and platform advertising dates."""
 from __future__ import annotations
 
+import base64
 import html
 import json
 import uuid
@@ -38,23 +39,26 @@ BUDGET_STYLES = """<style>
 .mori-budget-hero .hero-category{color:#c3deb5;font-size:14px;font-weight:700;letter-spacing:.12em;margin-bottom:7px;}
 .mori-budget-hero h1{font-size:48px!important;font-weight:850!important;line-height:1.16!important;letter-spacing:.025em!important;margin:0!important;padding:0!important;color:white!important;}
 .mori-budget-hero p{font-size:17px!important;line-height:1.6;color:#d3e1d2;margin:12px 0 0;}
-.stTabs [data-baseweb="tab-list"]{display:flex;gap:10px;padding:8px;background:#e5eee6;border:1px solid #cbdccc;border-radius:14px;overflow:visible;height:auto;}
-.stTabs [data-baseweb="tab"]{flex:1;min-width:0;min-height:58px;height:auto;padding:14px 18px!important;border:1px solid #b9cebb!important;border-radius:10px!important;background:#fff!important;color:#244d2a!important;box-shadow:0 2px 5px #17421e08;font-size:18px!important;font-weight:700!important;white-space:normal;transition:background-color 120ms,border-color 120ms,box-shadow 120ms;}
-.stTabs [data-baseweb="tab"] p{font-size:18px!important;font-weight:700!important;color:inherit!important;}
-.stTabs [data-baseweb="tab"]:hover{background:#f1f7ec!important;border-color:#527d53!important;box-shadow:0 4px 10px #17421e12;}
-.stTabs [data-baseweb="tab"][aria-selected="true"]{background:#17421E!important;border-color:#17421E!important;color:#fff!important;box-shadow:0 4px 12px #17421e30;}
-.stTabs [data-baseweb="tab"]:focus-visible{outline:3px solid #93bd64;outline-offset:3px;}
-.stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none;}
-.stTabs [role="tabpanel"]{padding-top:22px!important;}
-@media(max-width:700px){.mori-budget-hero{padding:24px 20px;}.mori-budget-hero-inner{gap:14px;}.mori-budget-symbol{width:56px;height:56px;font-size:20px;}.mori-budget-hero h1{font-size:36px!important;}.mori-budget-hero p{font-size:15px!important;}.stTabs [data-baseweb="tab-list"]{display:grid;grid-template-columns:1fr;gap:7px;}.stTabs [data-baseweb="tab"]{width:100%;min-height:48px;padding:11px!important;}.stTabs [data-baseweb="tab"] p{font-size:16px!important;}}
-@media(prefers-reduced-motion:reduce){.stTabs [data-baseweb="tab"]{transition:none;}}
+
+.st-key-budget_navigation{margin:4px 0 20px;padding:10px;background:#e5eee6;border:1px solid #cbdccc;border-radius:15px;}
+.st-key-budget_navigation [data-testid="stButton"] button{min-height:62px;width:100%;border:2px solid #afc6b1!important;border-radius:11px!important;background:#fff!important;color:#17421E!important;box-shadow:0 3px 8px #17421e0d;}
+.st-key-budget_navigation [data-testid="stButton"] button p{font-size:18px!important;font-weight:700!important;color:inherit!important;}
+.st-key-budget_navigation [data-testid="stButton"] button:hover{background:#f0f7e9!important;border-color:#527d53!important;box-shadow:0 5px 12px #17421e16;}
+.st-key-budget_navigation [data-testid="stButton"] button[kind="primary"]{background:#17421E!important;color:#fff!important;border-color:#17421E!important;box-shadow:0 5px 14px #17421e30;}
+.st-key-budget_navigation [data-testid="stButton"] button:focus-visible{outline:3px solid #93bd64;outline-offset:3px;}
+@media(max-width:700px){.mori-budget-hero{padding:24px 20px;}.mori-budget-hero-inner{gap:14px;}.mori-budget-symbol{width:56px;height:56px;}.mori-budget-hero h1{font-size:36px!important;}.mori-budget-hero p{font-size:15px!important;}.st-key-budget_navigation [data-testid="stButton"] button{min-height:52px;}.st-key-budget_navigation [data-testid="stButton"] button p{font-size:16px!important;}}
 </style>"""
 
 
 def render_budget_heading():
     st.markdown(BUDGET_STYLES, unsafe_allow_html=True)
+    icon = ('<svg width="43" height="43" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">'
+            '<rect x="5" y="12" width="38" height="25" rx="4" stroke="#d8f3b5" stroke-width="2.5"/>'
+            '<path d="M11 8h27M10 19a4 4 0 0 0 4-4M34 15a4 4 0 0 0 4 4M10 30a4 4 0 0 1 4 4M34 34a4 4 0 0 1 4-4" stroke="#d8f3b5" stroke-width="2" stroke-linecap="round"/>'
+            '<circle cx="24" cy="24.5" r="6" stroke="#d8f3b5" stroke-width="2.5"/></svg>')
+    src = base64.b64encode(icon.encode()).decode()
     st.markdown('<header class="mori-budget-hero"><div class="mori-budget-hero-inner">'
-                '<div class="mori-budget-symbol" aria-hidden="true">NT$</div><div>'
+                f'<div class="mori-budget-symbol" aria-hidden="true"><img src="data:image/svg+xml;base64,{src}" width="43" height="43" alt=""></div><div>'
                 '<div class="hero-category">廣告智慧儀表板・專案管理</div>'
                 '<h1>專案預算</h1><p>掌握每個專案的預算、花費與結餘</p>'
                 '</div></div></header>', unsafe_allow_html=True)
@@ -70,6 +74,10 @@ def project_header(name, phase, ads_phase):
             f'<div class="mori-status-pair">{status_badge("檔期", phase)}{status_badge("廣告", ads_phase)}</div></div>')
 
 
+def select_budget_section(section):
+    st.session_state.budget_section = section
+
+
 def render_budgets(settings, fetch, persist):
     st.markdown(BUDGET_STYLES, unsafe_allow_html=True)
     today = datetime.now(TAIPEI).date()
@@ -77,10 +85,18 @@ def render_budgets(settings, fetch, persist):
     accounts = {a['key']: a for a in settings['accounts']}
     plans = settings['projects']
     st.caption('即時數據｜累計各平台廣告走期花費，含預熱及今日已回報的花費；已結束計畫累計至廣告結束日。')
-    overview, edit, ledger = st.tabs(['預算總覽', '新增／編輯設定', '預算調動與紀錄'])
-    with overview:
+    selected = st.session_state.setdefault('budget_section', 'overview')
+    choices = [('overview', '預算總覽', ':material/dashboard:'),
+               ('edit', '新增／編輯設定', ':material/edit_square:'),
+               ('ledger', '預算調動與紀錄', ':material/swap_horiz:')]
+    with st.container(key='budget_navigation'):
+        for column, (section, label, icon) in zip(st.columns(3), choices):
+            column.button(label, icon=icon, key='budget_nav_' + section,
+                          type='primary' if selected == section else 'secondary', width='stretch',
+                          on_click=select_budget_section, args=(section,))
+    if selected == 'overview':
         render_budget_overview(settings, fetch)
-    with edit:
+    elif selected == 'edit':
         if not accounts:
             st.info('請先到「帳號與串接」新增廣告帳號。')
             return
@@ -212,7 +228,7 @@ def render_budgets(settings, fetch, persist):
         st.download_button('匯出設定備份（不含權杖）', json.dumps(settings, ensure_ascii=False, indent=2),
                            'mori-settings.json', on_click='ignore')
 
-    with ledger:
+    elif selected == 'ledger':
         render_ledger(settings, fetch, persist)
 
 

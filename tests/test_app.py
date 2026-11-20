@@ -104,6 +104,7 @@ def test_budget_group_and_two_platform_plans_save_and_render_separate_progress(m
     monkeypatch.setenv('DEMO_MODE', 'true')
     app = AppTest.from_file(APP, default_timeout=15).run()
     app.sidebar.radio[0].set_value('專案預算').run()
+    app.button(key='budget_nav_edit').click().run()
     next(x for x in app.text_input if x.label == '專案名稱').set_value('感謝祭')
     next(x for x in app.date_input if x.label == '專案開始日').set_value(date(2026,10,1))
     next(x for x in app.date_input if x.label == '專案結束日').set_value(date(2026,11,30))
@@ -133,11 +134,13 @@ def test_budget_group_and_two_platform_plans_save_and_render_separate_progress(m
     next(x for x in app.button if x.label == '儲存平台計畫').click().run()
     assert not app.exception
     assert len(app.session_state['demo_settings']['projects']) == 2, [e.value for e in app.error]
+    app.button(key='budget_nav_overview').click().run()
     next(x for x in app.button if x.label == '重新讀取').click().run()
     assert not app.exception
     assert len(app.session_state['budget_view']['results']) == 2
     assert sum(x.label == '花費進度' for x in app.metric) == 2
     saved = app.session_state['demo_settings']['projects'][0]
+    app.button(key='budget_nav_edit').click().run()
     app.selectbox(key='budget_plan_editor').select(saved['id']).run()
     next(x for x in app.text_input if x.label == '平台計畫名稱').set_value('Meta已更新')
     next(x for x in app.button if x.label == '儲存平台計畫').click().run()
@@ -162,6 +165,7 @@ def test_budget_transfer_ui_posts_once_and_updates_both_cards(monkeypatch):
     app.run()
     app.sidebar.radio[0].set_value('專案預算').run()
     next(x for x in app.button if x.label == '重新讀取').click().run()
+    app.button(key='budget_nav_ledger').click().run()
     next(x for x in app.number_input if x.label == '轉移金額').set_value(36386.)
     next(x for x in app.text_input if x.label == '異動原因／用途').set_value('北部加強')
     next(x for x in app.checkbox if x.label.startswith('已核對相關專案')).check()
@@ -173,9 +177,12 @@ def test_budget_transfer_ui_posts_once_and_updates_both_cards(monkeypatch):
     assert balance(updated,'b')['adjusted'] == 92386
     assert any('來源案' in x.value.to_string() and '接收案' in x.value.to_string() for x in app.dataframe)
     assert app.session_state['budget_view']['results']['a']['spend'] == 1200
+    app.button(key='budget_nav_overview').click().run()
     assert any(x.label == '可用預算' and x.value == '92,386.00' for x in app.metric)
+    app.button(key='budget_nav_edit').click().run()
     assert next(x for x in app.number_input if x.label.startswith('平台投放預算')).disabled is False  # new-plan editor
     # Reversal appends a second record and returns both balances.
+    app.button(key='budget_nav_ledger').click().run()
     next(x for x in app.radio if x.label == '異動方式').set_value('沖回紀錄').run()
     next(x for x in app.text_input if x.label == '異動原因／用途').set_value('測試沖回')
     next(x for x in app.checkbox if x.label.startswith('已核對相關專案')).check()

@@ -291,3 +291,21 @@ Small screens use stacked controls and adjusted heading sizes. No auto polling,
 budget values, attribution settings or ledger records were changed.
 Validation: all 91 existing financial, provider and UI tests pass. Visual changes
 require the deployed page to load version .27 before they are visible.
+
+### Real budget navigation buttons and site typography (2026.11.20.28)
+
+The three budget navigation controls are now native Streamlit buttons with icons,
+full-width hit targets, active primary styling and per-section rendering. They no
+longer rely on CSS selectors for tab internals. Existing project save/preview and
+budget transfer/reversal UI checks now navigate with these actual controls.
+The page hero uses a banknote SVG icon rendered through a data-URI image in place
+of the ambiguous NT$ text decoration.
+
+Microsoft JhengHei is the configured body/heading/code font in both main/sidebar
+themes; central CSS also covers widgets/popovers, while Vega-Lite config specifies
+the chart font. Material icon glyphs retain their icon font. New widgets inherit
+the theme. The font is resolved from the viewing device, with a fallback when it
+is not installed; no proprietary font binary is bundled. AGENTS.md records the
+font convention for future changes.
+Validation: 91 tests pass, including real-button navigation through save, preview,
+transfer and reversal flows. The deployed appearance still needs to load .28.

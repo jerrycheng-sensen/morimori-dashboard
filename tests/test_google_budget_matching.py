@@ -93,6 +93,7 @@ def persist(updated, **kwargs):
 render_budgets(s, fetch, persist)
 """
     app = AppTest.from_string(source, default_timeout=15).run()
+    app.button(key='budget_nav_edit').click().run()
     next(x for x in app.selectbox if x.label == '所屬專案').select('f')
     next(x for x in app.text_input if x.label == '平台計畫名稱').set_value('感謝祭 Google')
     app.selectbox(key='budget_field_new_0').select('headlines')

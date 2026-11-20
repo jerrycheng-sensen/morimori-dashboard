@@ -15,7 +15,10 @@ PLATFORMS = {'meta': 'Meta', 'google': 'Google Ads'}
 
 CSS = '''<style>
 :root{--mori-brand:#17421E;--mori-ink:#142b1c;--mori-accent:#b8e572;}
-html,body,[data-testid="stApp"]{font-family:"Microsoft JhengHei","微軟正黑體",sans-serif;}
+html,body,[data-testid="stApp"]{font-family:"Microsoft JhengHei","微軟正黑體",sans-serif!important;}
+[data-testid="stApp"] *:not([data-testid="stIconMaterial"]):not([class*="material-symbols"]){font-family:"Microsoft JhengHei","微軟正黑體",sans-serif!important;}
+[data-testid="stIconMaterial"],[class*="material-symbols"]{font-family:"Material Symbols Rounded"!important;}
+body [role="tooltip"],body [role="listbox"],body [role="option"],body [data-baseweb="popover"],body [data-baseweb="popover"] *{font-family:"Microsoft JhengHei","微軟正黑體",sans-serif!important;}
 [data-testid="stAppViewContainer"]{background:radial-gradient(ellipse at 95% 2%,#dcebdc80,transparent 45%),linear-gradient(#17421e03 1px,transparent 1px),linear-gradient(90deg,#17421e03 1px,transparent 1px),#f4f7f4;background-size:auto,32px 32px,32px 32px,auto;}
 [data-testid="stHeader"]{background:#f4f7f4ef;border-bottom:1px solid #17421e10;}
 [data-testid="stMainBlockContainer"]{max-width:1500px;padding-top:4.6rem!important;padding-bottom:3rem;}
@@ -123,7 +126,7 @@ def chart_spec(title, color, money=False):
             'tooltip': [{'field': 'date', 'type': 'temporal', 'title': '日期', 'format': '%Y/%m/%d'},
                         {'field': 'value', 'type': 'quantitative', 'title': title, 'format': ',.2f'}],
         },
-        'config': {'view': {'stroke': None}, 'axis': {'domain': False, 'ticks': False,
+        'config': {'font': 'Microsoft JhengHei', 'view': {'stroke': None}, 'axis': {'domain': False, 'ticks': False,
                    'gridColor': '#edf1ee', 'labelColor': '#7d8b82', 'labelPadding': 10},
                    'background': 'transparent'},
     }
