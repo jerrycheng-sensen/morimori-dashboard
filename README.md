@@ -335,3 +335,35 @@ Validation: 99 tests pass, including whole-period request/pagination, same-name
 ads, duplicate IDs, invalid money/dates, Decimal summation and existing UI,
 Google attribution, ledger and anomaly behavior. Mock tests do not establish that
 the deployed API result equals the user's export.
+
+### Year and phase project navigation (2026.11.20.30)
+
+The budget overview now has a dedicated left project rail in the main content,
+separate from the global app sidebar. It offers a year selector, name search,
+project-period status filter, phase groups with counts, selected project buttons
+and a return-to-all-matches button. Running projects come first, then preparing,
+then closed; closed projects are collapsible. The right pane renders only the
+selected project or matching set, retaining Meta/Google side-by-side cards.
+
+Navigation indexes stored project groups dynamically, once per project rather
+than once per platform. Legacy ungrouped plans remain findable and labelled.
+Status follows project dates independently of advertising closure and the legacy
+manual alert-management flag. Cross-year projects are findable in each year they
+span; the year selector is a lookup filter, not an annual cost allocation. A
+caption explains that costs still use the full configured advertising window.
+Search/year/status changes reset an incompatible selection instead of hiding it
+silently. Zero matches and budget-filter exclusions have distinct empty states.
+
+Native buttons, visible focus, brand #17421E and inherited Microsoft JhengHei
+are retained. The long project list scrolls within the rail; narrow screens use
+native stacked columns and a shorter list. The selected data pane adjusts metric
+sizes to leave room for platform comparison. No data, ledger entries, date
+windows, credentials or refresh triggers were changed. Selection reuses the
+session report; only initial/config/date invalidation or manual reload fetches.
+
+Validation: 101 tests pass. Added coverage for grouping versus platform children,
+project-versus-ad status, cross-year lookup, legacy entries, search, project
+selection, stale selection reset, year switching and reuse of a single spend
+read across navigation. A local browser screenshot check could not run because
+the execution environment blocks Chromium socket creation; deployed desktop and
+mobile visual appearance has not been independently verified.

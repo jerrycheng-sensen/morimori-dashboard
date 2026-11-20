@@ -47,6 +47,20 @@ BUDGET_STYLES = """<style>
 .st-key-budget_navigation [data-testid="stButton"] button[kind="primary"]{background:#17421E!important;color:#fff!important;border-color:#17421E!important;box-shadow:0 5px 14px #17421e30;}
 .st-key-budget_navigation [data-testid="stButton"] button:focus-visible{outline:3px solid #93bd64;outline-offset:3px;}
 @media(max-width:700px){.mori-budget-hero{padding:24px 20px;}.mori-budget-hero-inner{gap:14px;}.mori-budget-symbol{width:56px;height:56px;}.mori-budget-hero h1{font-size:36px!important;}.mori-budget-hero p{font-size:15px!important;}.st-key-budget_navigation [data-testid="stButton"] button{min-height:52px;}.st-key-budget_navigation [data-testid="stButton"] button p{font-size:16px!important;}}
+
+.st-key-budget_project_rail{background:linear-gradient(160deg,#fff,#edf4ec);border:1px solid #cbddc9!important;border-radius:16px;padding:18px 14px;box-shadow:0 8px 24px #17421e0a;}
+.mori-rail-title{font-size:24px;font-weight:800;color:#17421E;line-height:1.5;}
+.mori-rail-subtitle{font-size:14px;color:#5d735e;margin-bottom:16px;}
+.mori-rail-status{font-size:14px;font-weight:700;margin-bottom:8px;}
+.st-key-budget_project_rail [data-testid="stButton"] button{min-height:46px;text-align:left;justify-content:flex-start;width:100%;border:1px solid #cbdccc;background:#fff;color:#17421E;}
+.st-key-budget_project_rail [data-testid="stButton"] button p{font-size:16px!important;font-weight:650;line-height:1.5;overflow-wrap:anywhere;}
+.st-key-budget_project_rail [data-testid="stButton"] button[kind="primary"]{background:#17421E!important;color:#fff!important;border-color:#17421E;box-shadow:inset 4px 0 #b8e572;}
+.st-key-budget_project_rail [data-testid="stButton"] button:hover{border-color:#73965d;background:#edf5e6;}
+.st-key-budget_project_rail [data-testid="stButton"] button:focus-visible{outline:3px solid #93bd64;outline-offset:2px;}
+.mori-results-heading{font-size:22px;font-weight:750;color:#17421E;margin:0 0 12px;}
+.st-key-budget_project_content [data-testid="stMetric"]{padding:16px 14px;}
+.st-key-budget_project_content [data-testid="stMetricValue"]{font-size:clamp(22px,2.1vw,32px)!important;}
+@media(max-width:700px){.st-key-budget_project_rail{padding:14px;}.st-key-budget_project_list{height:260px!important;max-height:260px;overflow-y:auto;}}
 </style>"""
 
 
@@ -232,15 +246,72 @@ def render_budgets(settings, fetch, persist):
         render_ledger(settings, fetch, persist)
 
 
+def select_budget_project(nav_id):
+    st.session_state.budget_selected_project = nav_id
+
+
+def render_project_rail(settings, today):
+    from mori.project_navigation import STATES, project_entries, project_years, filter_entries
+    entries = project_entries(settings, today)
+    years = project_years(entries)
+    with st.container(key='budget_project_rail', border=True):
+        st.markdown('<div class="mori-rail-title">專案導覽</div><div class="mori-rail-subtitle">選年度，快速掌握每個案子</div>', unsafe_allow_html=True)
+        year_options = [None] + years
+        if st.session_state.get('budget_nav_year') not in year_options:
+            st.session_state.budget_nav_year = today.year if today.year in years else (years[0] if years else None)
+        elif 'budget_nav_year' not in st.session_state:
+            st.session_state.budget_nav_year = today.year if today.year in years else (years[0] if years else None)
+        year = st.selectbox('專案年度', year_options, format_func=lambda y: f'{y} 年' if y else '所有年度', key='budget_nav_year')
+        query = st.text_input('搜尋專案', placeholder='輸入名稱，例如：感謝祭', key='budget_nav_search')
+        state = st.selectbox('檔期狀態', ['全部', *STATES], key='budget_state_filter')
+        visible = filter_entries(entries, year, query, state)
+        valid_ids = {e['nav_id'] for e in visible}
+        selected = st.session_state.get('budget_selected_project', 'all')
+        if selected != 'all' and selected not in valid_ids:
+            selected = 'all'
+        st.session_state.budget_selected_project = selected
+        st.button(f'查看全部符合專案（{len(visible)}）', key='budget_project_all', width='stretch',
+                  type='primary' if selected == 'all' else 'secondary',
+                  on_click=select_budget_project, args=('all',))
+        if not visible:
+            st.info('找不到符合的專案，請調整年度、狀態或搜尋文字。')
+        colors = {'進行中': '#2d7637', '準備中': '#9a6418', '已結案': '#64748b'}
+        with st.container(height=480, border=False, key='budget_project_list'):
+            for phase in STATES:
+                members = [e for e in visible if e['phase'] == phase]
+                if not members:
+                    continue
+                with st.expander(f'{phase} · {len(members)}', expanded=phase != '已結案' or any(e['nav_id'] == selected for e in members)):
+                    st.markdown(f'<div class="mori-rail-status" style="color:{colors[phase]}">{phase}專案</div>', unsafe_allow_html=True)
+                    for e in members:
+                        st.button(e['name'] + ('（未歸類）' if e['plan_id'] else ''),
+                                  key='budget_project_' + e['nav_id'], width='stretch',
+                                  type='primary' if selected == e['nav_id'] else 'secondary',
+                                  help=f"檔期 {e['start']} ～ {e['end']}",
+                                  on_click=select_budget_project, args=(e['nav_id'],))
+        st.caption('以專案檔期分類；廣告投放狀態另列。跨年專案可在兩個年度找到，金額仍依完整廣告走期呈現。')
+    chosen = visible if selected == 'all' else [e for e in visible if e['nav_id'] == selected]
+    return chosen, year
+
+
 @st.fragment
 def render_budget_overview(settings, fetch):
+    rail, content = st.columns([1, 3.7], gap='large')
+    with rail:
+        entries, year = render_project_rail(settings, datetime.now(TAIPEI).date())
+    with content:
+        with st.container(key='budget_project_content'):
+            st.markdown('<div class="mori-results-heading">' + (f'{year} 年' if year else '所有年度') +
+                        f' · {len(entries)} 個專案</div>', unsafe_allow_html=True)
+            render_budget_results(settings, fetch, entries)
+
+
+def render_budget_results(settings, fetch, entries):
     today = datetime.now(TAIPEI).date()
     groups = {g['id']: g for g in settings.get('project_groups', [])}
     accounts = {a['key']: a for a in settings['accounts']}
     plans = settings['projects']
-    left, right = st.columns([3, 1])
-    mode = left.radio('顯示專案', ['全部', '準備中', '進行中', '已結案'], horizontal=True, key='budget_state_filter')
-    manual = right.button('重新讀取', disabled=not bool(plans), help='首次開啟自動載入；之後按此按鈕取得平台最新花費。')
+    manual = st.button('重新讀取', disabled=not bool(plans), help='首次開啟自動載入；之後按此按鈕取得平台最新花費。')
     entered = st.session_state.pop('budget_refresh_requested', False)
     view = st.session_state.get('budget_view')
     now = datetime.now(TAIPEI)
@@ -271,12 +342,17 @@ def render_budget_overview(settings, fetch):
         return summary['remaining'] < 0 if money_filter == '已超支' else (summary['budget'] > 0 and summary['remaining'] > 0 and today > date.fromisoformat(plan['end']))
     if not groups and not plans:
         st.info('先到「新增／編輯設定」建立專案，再分別加入 Meta、Google 投放計畫。')
-    for gid, group in groups.items():
-        if mode != '全部' and period_state(group['start'], group['end'], today) != mode:
+    visible_plans = {e['plan_id'] for e in entries if e['plan_id']}
+    shown = 0
+    for entry in entries:
+        gid = entry['group_id']
+        if not gid:
             continue
+        group = groups[gid]
         children = [p for p in plans if p.get('group_id') == gid]
         if money_filter != '全部' and not any(visible(p) for p in children):
             continue
+        shown += 1
         with st.container(border=True):
             phase = period_state(group['start'], group['end'], today)
             ads_phase = advertising_state(children, today)
@@ -300,13 +376,15 @@ def render_budget_overview(settings, fetch):
                         with col:
                             with st.container(border=True):
                                 render_plan(plan, accounts, results.get(plan['id']), today, settings, compact=True)
-    ungrouped = [p for p in plans if not p.get('group_id') and (mode == '全部' or period_state(p['start'], p['end'], today, p.get('status') == '已結案') == mode) and visible(p)]
+    ungrouped = [p for p in plans if p['id'] in visible_plans and visible(p)]
     if ungrouped:
         st.subheader('既有平台計畫｜尚未歸入專案')
         st.caption('既有資料及異常規則連結均保留。可在設定頁編輯此計畫，指定所屬專案。')
         for plan in ungrouped:
             with st.container(border=True):
                 render_plan(plan, accounts, results.get(plan['id']), today, settings)
+    if entries and not shown and not ungrouped:
+        st.info('目前選取的專案沒有符合此預算狀況；可將「預算狀況」切回全部。')
     st.caption('進度＝實際花費 ÷ 調整後可用預算。金額不另加稅與服務費，不等於儲值餘額。不同專案篩選可能重疊，因此不加總為全帳號花費。走期狀態依設定日期判斷，不代表平台即時開關狀態。')
 
 def render_group_totals(plans, results, today, settings):

@@ -8,3 +8,6 @@
 - Keep the Mori brand primary color `#17421E`.
 - Budget navigation uses real, labelled Streamlit buttons with selected states,
   not bare text tabs. Only render the selected section.
+- Project navigation indexes stored project groups dynamically, not platform names.
+  Year is a lookup filter; never clip spend windows to the selected calendar year.
+  Navigation changes reuse loaded reports and must not trigger new API requests.

@@ -217,7 +217,7 @@ def test_budget_initial_load_only_until_manual_read_even_after_navigation_or_ela
     assert app.session_state['budget_view']['results']['p']['spend'] == 1200
     assert any(x.label == '累計花費' and x.value == '1,200.00' for x in app.metric)
     # Fragment-only filters must not read the API on every click.
-    next(x for x in app.radio if x.label == '顯示專案').set_value('進行中').run()
+    app.selectbox(key='budget_state_filter').set_value('進行中').run()
     assert not app.exception and len(calls) == 1
     app.sidebar.radio[0].set_value('數據總覽').run()
     app.sidebar.radio[0].set_value('專案預算').run()
@@ -229,3 +229,42 @@ def test_budget_initial_load_only_until_manual_read_even_after_navigation_or_ela
     assert not app.exception and len(calls) == 1
     next(x for x in app.button if x.label == '重新讀取').click().run()
     assert not app.exception and len(calls) == 2
+
+
+def test_project_rail_switch_search_year_and_status_reuse_spend(monkeypatch):
+    import mori.budget_ui as ui
+    from mori.core import default_settings
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    original = ui.collect_spend
+    calls = []
+    def spy(*args):
+        calls.append(1)
+        return original(*args)
+    monkeypatch.setattr(ui, 'collect_spend', spy)
+    settings = default_settings()
+    settings['accounts'] = [{'key': 'demo_meta', 'name': 'Meta', 'platform': 'meta', 'account_id': '1'}]
+    settings['project_groups'] = [
+        {'id': 'f', 'name': '感謝祭第5彈', 'start': '2026-10-01', 'end': '2026-11-30', 'status': '進行中'},
+        {'id': 'l', 'name': '林口開幕', 'start': '2026-04-01', 'end': '2026-07-31', 'status': '已結案'},
+        {'id': 'old', 'name': '去年專案', 'start': '2025-01-01', 'end': '2025-01-31', 'status': '已結案'}]
+    settings['projects'] = [{'id': 'p', 'group_id': 'f', 'name': 'Meta', 'account_key': 'demo_meta',
+                             'start': '2026-11-18', 'end': '2026-11-18', 'budget': 10000, 'keyword': '示範'}]
+    app = AppTest.from_file(APP, default_timeout=15)
+    app.session_state['demo_settings'] = settings
+    app.run()
+    app.sidebar.radio[0].set_value('專案預算').run()
+    assert not app.exception and len(calls) == 1
+    app.selectbox(key='budget_nav_year').set_value(2026).run()
+    app.button(key='budget_project_group:l').click().run()
+    assert not app.exception and app.session_state['budget_selected_project'] == 'group:l'
+    headings = [x.value for x in app.markdown if 'class="project-name"' in x.value]
+    assert len(headings) == 1 and '林口開幕' in headings[0]
+    app.text_input(key='budget_nav_search').set_value('感謝祭').run()
+    assert not app.exception and app.session_state['budget_selected_project'] == 'all'
+    assert any('感謝祭第5彈' in x.value for x in app.markdown if 'class="project-name"' in x.value)
+    app.text_input(key='budget_nav_search').set_value('無此專案').run()
+    assert any('找不到符合' in x.value for x in app.info)
+    app.text_input(key='budget_nav_search').set_value('').run()
+    app.selectbox(key='budget_nav_year').set_value(2025).run()
+    assert any('去年專案' in x.value for x in app.markdown if 'class="project-name"' in x.value)
+    assert len(calls) == 1
