@@ -256,3 +256,25 @@ This does not stop ads or change platform budgets; it updates decision visibilit
 Validation: 89 tests, including ad start/end-day inclusion, ended-plan limits,
 current-day snapshot drift versus historical/missing-data failures, and existing
 anomaly date boundaries. Live deployment/API timing has not been observed.
+
+### Manual refresh and independent period/ad badges (2026.11.20.26)
+
+This supersedes the minute polling behavior above. A browser session loads budgets
+on its first visit. There is no run_every timer and no time-based expiration;
+returning to the page or changing filters reuses the snapshot. 重新讀取 fetches
+again. Saved configuration changes and Taipei date changes invalidate the view.
+Current-day reported spending and platform-latency notices remain unchanged.
+
+Project titles are enlarged (30px desktop / 25px mobile), with separate labelled
+檔期 and 廣告 badges. The period badge/filter uses project start/end dates only;
+ad badges use platform plan dates and any manual plan closure. Preparing is amber,
+running is green and closed is slate. The project management flag remains in the
+editor (explicitly labelled as controlling anomaly checks); this change does not
+silently reactivate rules or rewrite saved statuses. Meta-left/Google-right cards
+and all allocation/transaction data are retained.
+
+Meta Graph API error 4/17 now explains rate limiting rather than suggesting token
+or permission failure. No raw platform error message or credential is displayed.
+Validation: 91 tests, including no timer-based reads, navigation/manual refresh,
+independent date/ad lifecycle states and sanitized rate-limit error handling.
+Live deployment and Meta quota recovery have not been independently observed.

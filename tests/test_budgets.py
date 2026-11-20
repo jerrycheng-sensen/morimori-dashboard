@@ -111,7 +111,7 @@ def test_project_rollup_uses_adjusted_allocations_and_never_totals_missing_or_mi
     assert unset['spend'] == pytest.approx(235647.53) and unset['budget'] is None and unset['ratio'] is None
 
 
-def test_budget_refresh_policy_for_entry_expiry_settings_and_day_rollover():
+def test_budget_refresh_policy_initial_and_manual_without_timed_expiry():
     from datetime import timedelta
     from mori.budgets import refresh_due, configuration_key
     s = sample()
@@ -119,7 +119,7 @@ def test_budget_refresh_policy_for_entry_expiry_settings_and_day_rollover():
     view = {'key':configuration_key(s),'at':now.isoformat(), 'date':str(now.date())}
     assert refresh_due(s, None, now)
     assert not refresh_due(s, view, now + timedelta(seconds=59))
-    assert refresh_due(s, view, now + timedelta(seconds=60))
+    assert not refresh_due(s, view, now + timedelta(hours=2))
     assert refresh_due(s, view, now, force=True)
     updated = copy.deepcopy(s)
     updated['projects'][0]['keyword'] = '新條件'
@@ -158,3 +158,17 @@ def test_live_budget_includes_first_and_last_ad_day_and_caps_ended_plans():
     assert plan_summary(p,last,date(2026,11,18))['remaining'] == 1
     ended = collect_spend([p],accounts,fetch,date(2026,11,20))['meta']
     assert windows[-1][1] == date(2026,11,18) and not ended['includes_today']
+
+
+
+def test_period_and_advertising_states_are_independent_and_include_date_boundaries():
+    from mori.budgets import period_state, advertising_state
+    today = date(2026,11,20)
+    assert period_state('2026-10-01','2026-11-30',today) == '進行中'
+    ended = {'start':'2026-09-29','end':'2026-11-18','status':'已結案'}
+    assert advertising_state([ended],today) == '已結案'
+    assert period_state('2026-11-21','2026-12-01',today) == '準備中'
+    assert period_state('2026-11-20','2026-11-20',today) == '進行中'
+    assert period_state('2026-11-01','2026-11-19',today) == '已結案'
+    assert advertising_state([ended, {'start':'2026-11-21','end':'2026-12-01'}],today) == '準備中'
+    assert advertising_state([ended, {'start':'2026-11-20','end':'2026-12-01'}],today) == '進行中'

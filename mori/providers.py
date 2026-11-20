@@ -18,6 +18,8 @@ def request_json(session, method, url, **kwargs):
     if not response.ok or (isinstance(data, dict) and data.get("error")):
         # 不回傳 request URL、原始錯誤或 response body，避免把 token 印進網頁或紀錄。
         code = data.get("error", {}).get("code", "") if isinstance(data, dict) and isinstance(data.get("error"), dict) else ""
+        if 'graph.facebook.com' in url and str(code) in ('4', '17'):
+            raise AppError(f"Meta API 請求量已達限制（代碼 {code}）；請稍後再按「重新讀取」。這不是權杖失效訊息。")
         raise AppError(f"廣告平台拒絕請求（HTTP {response.status_code}，代碼 {code}）；請檢查授權、帳號與 API 存取。")
     return data
 

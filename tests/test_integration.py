@@ -340,3 +340,13 @@ def test_batches_respect_line_message_limit():
     batches = build_batches(candidates, "Utest", "slot")
     assert all(len(b["text"]) <= 4500 for b in batches)
     assert sum(len(b["fingerprints"]) for b in batches) == 10
+
+
+
+def test_meta_rate_limit_message_is_distinct_from_permissions_and_does_not_leak_payload():
+    from mori.providers import request_json
+    session = Session([Response({'error':{'code':4,'message':'SECRET_TOKEN'}},status=403)])
+    with pytest.raises(AppError, match='請求量已達限制') as error:
+        request_json(session,'GET','https://graph.facebook.com/v26.0/act_1/insights')
+    assert 'SECRET_TOKEN' not in str(error.value)
+    assert '檢查授權' not in str(error.value)

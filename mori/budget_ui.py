@@ -1,6 +1,7 @@
 """Project budget cards with independent activity and platform advertising dates."""
 from __future__ import annotations
 
+import html
 import json
 import uuid
 from datetime import date, datetime
@@ -9,13 +10,41 @@ import pandas as pd
 import streamlit as st
 
 from mori.budgets import (collect_spend, configuration_key, plan_summary, save_group,
-                          save_plan, time_progress, group_summary, refresh_due)
+                          save_plan, time_progress, group_summary, refresh_due, period_state, advertising_state)
 from mori.core import AppError, TAIPEI
 from mori.budget_ledger import balance, impacts
 from mori.budget_ledger_ui import records, render_ledger
 
 
+BUDGET_STYLES = """<style>
+.mori-project-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin:6px 0 10px;}
+.mori-project-heading .project-name{font-size:30px!important;margin:0;line-height:1.4;font-weight:800;color:#17421E;letter-spacing:.015em;overflow-wrap:anywhere;}
+.mori-status-pair{display:flex;gap:10px;flex-wrap:wrap;}
+.mori-status{display:inline-flex;align-items:center;gap:8px;border-radius:9px;padding:8px 13px;font-size:15px!important;font-weight:700;line-height:1.4;border:1px solid;white-space:nowrap;}
+.mori-status.preparing{background:#fff4da;color:#875600;border-color:#e6c978;}
+.mori-status.running{background:#e5f3e6;color:#17421E;border-color:#9ec7a4;}
+.mori-status.closed{background:#edf0f3;color:#465260;border-color:#bcc6ce;}
+.mori-status .status-scope{font-weight:500;opacity:.85;}
+.mori-period-dates{font-size:16px!important;color:#4e6252;line-height:1.7;margin:0 0 14px;}
+.mori-platform-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:4px 0 8px;}
+.mori-platform-heading>span:first-child{font-size:23px!important;font-weight:750;color:#17421E;}
+.mori-ad-dates{font-size:15px!important;color:#536958;line-height:1.7;margin-bottom:14px;}
+@media(max-width:700px){.mori-project-heading .project-name{font-size:25px!important;}.mori-status{font-size:14px!important;padding:6px 10px;}}
+</style>"""
+
+
+def status_badge(scope, state):
+    kind = {'準備中': 'preparing', '進行中': 'running', '已結案': 'closed'}[state]
+    return f'<span class="mori-status {kind}"><span class="status-scope">{html.escape(scope)}</span>{state}</span>'
+
+
+def project_header(name, phase, ads_phase):
+    return (f'<div class="mori-project-heading"><h2 class="project-name">{html.escape(name)}</h2>'
+            f'<div class="mori-status-pair">{status_badge("檔期", phase)}{status_badge("廣告", ads_phase)}</div></div>')
+
+
 def render_budgets(settings, fetch, persist):
+    st.markdown(BUDGET_STYLES, unsafe_allow_html=True)
     today = datetime.now(TAIPEI).date()
     groups = {g['id']: g for g in settings.get('project_groups', [])}
     accounts = {a['key']: a for a in settings['accounts']}
@@ -40,8 +69,8 @@ def render_budgets(settings, fetch, persist):
             a, b = st.columns(2)
             start = a.date_input('專案開始日', date.fromisoformat(group['start']) if group else today)
             end = b.date_input('專案結束日', date.fromisoformat(group['end']) if group else today)
-            status = st.selectbox('專案狀態', ['進行中', '已結案'], index=int(group.get('status') == '已結案'))
-            st.caption('這裡填完整活動走期。例如感謝祭 10/1～11/30；Meta 的 9/29 預熱另外填在平台廣告走期。專案手動結案會停止所屬計畫的異常檢查。')
+            status = st.selectbox('專案管理狀態（影響異常檢查）', ['進行中', '已結案'], index=int(group.get('status') == '已結案'))
+            st.caption('這裡填完整活動走期。例如感謝祭 10/1～11/30；Meta 的 9/29 預熱另外填在平台廣告走期。總覽的「檔期」標籤只依此日期判斷；此管理狀態用於停止異常檢查，與檔期時間分開。廣告投放結束請在下方平台計畫結案。')
             if st.form_submit_button('儲存專案資料'):
                 try:
                     updated = save_group(settings, {'id': group.get('id', uuid.uuid4().hex), 'name': name.strip(),
@@ -160,15 +189,15 @@ def render_budgets(settings, fetch, persist):
         render_ledger(settings, fetch, persist)
 
 
-@st.fragment(run_every=60)
+@st.fragment
 def render_budget_overview(settings, fetch):
     today = datetime.now(TAIPEI).date()
     groups = {g['id']: g for g in settings.get('project_groups', [])}
     accounts = {a['key']: a for a in settings['accounts']}
     plans = settings['projects']
     left, right = st.columns([3, 1])
-    mode = left.radio('顯示專案', ['全部', '進行中', '已結案'], horizontal=True, key='budget_state_filter')
-    manual = right.button('重新讀取', disabled=not bool(plans), help='平時自動更新；需要立刻重查時可使用。')
+    mode = left.radio('顯示專案', ['全部', '準備中', '進行中', '已結案'], horizontal=True, key='budget_state_filter')
+    manual = right.button('重新讀取', disabled=not bool(plans), help='首次開啟自動載入；之後按此按鈕取得平台最新花費。')
     entered = st.session_state.pop('budget_refresh_requested', False)
     view = st.session_state.get('budget_view')
     now = datetime.now(TAIPEI)
@@ -186,8 +215,8 @@ def render_budget_overview(settings, fetch):
         stamp = datetime.fromisoformat(view['at']).astimezone(TAIPEI).strftime('%Y/%m/%d %H:%M:%S')
         errors = sum(bool(r.get('error')) for r in results.values())
         if errors:
-            st.warning(f'{errors} 個平台計畫更新失敗，未列為零花費；約一分鐘後自動重試。')
-        st.caption(f'自動更新開啟・資料讀取時間 {stamp}（台灣時間）・停留本頁約每分鐘更新・包含今日未完整花費')
+            st.warning(f'{errors} 個平台計畫讀取失敗，未列為零花費；請稍後按「重新讀取」。')
+        st.caption(f'資料讀取時間 {stamp}（台灣時間）・含今日未完整花費・首次自動載入，後續按「重新讀取」更新')
     st.caption('數據依廣告平台最新回報，可能延遲或事後回補，非逐秒最終帳單；請留意剩餘預算。異常通知仍檢查昨天完整資料。')
     money_filter = st.selectbox('預算狀況', ['全部', '已超支', '廣告結束有結餘'], key='budget_money_filter')
     def visible(plan):
@@ -200,24 +229,16 @@ def render_budget_overview(settings, fetch):
     if not groups and not plans:
         st.info('先到「新增／編輯設定」建立專案，再分別加入 Meta、Google 投放計畫。')
     for gid, group in groups.items():
-        if mode != '全部' and group['status'] != mode:
+        if mode != '全部' and period_state(group['start'], group['end'], today) != mode:
             continue
         children = [p for p in plans if p.get('group_id') == gid]
         if money_filter != '全部' and not any(visible(p) for p in children):
             continue
         with st.container(border=True):
-            title, badge = st.columns([3, 1])
-            title.subheader(group['name'])
-            if group['status'] == '已結案':
-                state = '已結案'
-            elif today < date.fromisoformat(group['start']):
-                state = '活動尚未開始'
-            elif today > date.fromisoformat(group['end']):
-                state = '活動走期已結束'
-            else:
-                state = '活動走期內'
-            badge.markdown('**' + state + '**')
-            st.caption(f"專案走期　{group['start']} ～ {group['end']}")
+            phase = period_state(group['start'], group['end'], today)
+            ads_phase = advertising_state(children, today)
+            st.markdown(project_header(group['name'], phase, ads_phase), unsafe_allow_html=True)
+            st.markdown(f'<div class="mori-period-dates">檔期走期　{html.escape(group["start"])} ～ {html.escape(group["end"])}</div>', unsafe_allow_html=True)
             elapsed = time_progress(group['start'], group['end'], today)
             st.progress(elapsed, text=f'專案時間進度 {elapsed:.0%}（含今天，與花費分開計算）')
             if children and all(today > date.fromisoformat(p['end']) for p in children):
@@ -236,7 +257,7 @@ def render_budget_overview(settings, fetch):
                         with col:
                             with st.container(border=True):
                                 render_plan(plan, accounts, results.get(plan['id']), today, settings, compact=True)
-    ungrouped = [p for p in plans if not p.get('group_id') and (mode == '全部' or p['status'] == mode) and visible(p)]
+    ungrouped = [p for p in plans if not p.get('group_id') and (mode == '全部' or period_state(p['start'], p['end'], today, p.get('status') == '已結案') == mode) and visible(p)]
     if ungrouped:
         st.subheader('既有平台計畫｜尚未歸入專案')
         st.caption('既有資料及異常規則連結均保留。可在設定頁編輯此計畫，指定所屬專案。')
@@ -265,8 +286,9 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
     platform = 'Meta' if account['platform'] == 'meta' else 'Google Ads'
     data = plan_summary(plan, result, today, settings)
     # Project title belongs to the outer envelope; plan name stays in the details.
-    st.markdown('#### ' + platform)
-    st.caption(f"廣告走期　{plan['start']} ～ {plan['end']}　｜　{data['state']}")
+    phase = period_state(plan['start'], plan['end'], today, plan.get('status') == '已結案')
+    st.markdown(f'<div class="mori-platform-heading"><span>{platform}</span>{status_badge("投放", phase)}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="mori-ad-dates">廣告走期　{html.escape(plan["start"])} ～ {html.escape(plan["end"])}</div>', unsafe_allow_html=True)
     if (result or {}).get('includes_today'):
         st.caption('即時數據・含今日未完整花費，平台可能延遲回報或回補。')
     if not plan.get('group_id'):

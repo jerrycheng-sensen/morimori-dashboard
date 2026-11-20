@@ -186,7 +186,7 @@ def test_budget_transfer_ui_posts_once_and_updates_both_cards(monkeypatch):
     assert balance(updated,'a')['adjusted'] == 60000 and balance(updated,'b')['adjusted'] == 56000
 
 
-def test_budget_opens_with_fresh_data_without_a_click_and_refreshes_on_reentry(monkeypatch):
+def test_budget_initial_load_only_until_manual_read_even_after_navigation_or_elapsed_time(monkeypatch):
     from datetime import datetime, timedelta
     from mori.core import default_settings, TAIPEI
     import mori.budget_ui as ui
@@ -210,13 +210,15 @@ def test_budget_opens_with_fresh_data_without_a_click_and_refreshes_on_reentry(m
     assert app.session_state['budget_view']['results']['p']['spend'] == 1200
     assert any(x.label == '累計花費' and x.value == '1,200.00' for x in app.metric)
     # Fragment-only filters must not read the API on every click.
-    next(x for x in app.radio if x.label == '顯示專案').set_value('已結案').run()
+    next(x for x in app.radio if x.label == '顯示專案').set_value('進行中').run()
     assert not app.exception and len(calls) == 1
     app.sidebar.radio[0].set_value('數據總覽').run()
     app.sidebar.radio[0].set_value('專案預算').run()
-    assert not app.exception and len(calls) == 2
+    assert not app.exception and len(calls) == 1
     view = dict(app.session_state['budget_view'])
     view['requested_at'] = (datetime.now(TAIPEI) - timedelta(seconds=61)).isoformat()
     app.session_state['budget_view'] = view
     app.run()
-    assert not app.exception and len(calls) == 3
+    assert not app.exception and len(calls) == 1
+    next(x for x in app.button if x.label == '重新讀取').click().run()
+    assert not app.exception and len(calls) == 2

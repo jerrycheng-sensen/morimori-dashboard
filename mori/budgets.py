@@ -46,18 +46,36 @@ def plan_summary(plan, result, today, settings=None):
             'currency': result.get('currency') if known else None}
 
 
-def refresh_due(settings, view, now, force=False, ttl=60):
-    """Per-session freshness; settings/date changes and every page entry force reads."""
+def refresh_due(settings, view, now, force=False):
+    """Initial load/manual refresh only; no time-based polling or expiry."""
     if not settings['projects']:
         return False
     if force or not view or view.get('key') != configuration_key(settings) or view.get('date') != str(now.date()):
         return True
     try:
-        requested = datetime.fromisoformat(view.get('requested_at') or view['at'])
-        age = (now - requested).total_seconds()
-        return age < 0 or age >= ttl
+        datetime.fromisoformat(view['at'])
     except (ValueError, TypeError, KeyError):
         return True
+    return False
+
+
+def period_state(start, end, today, closed=False):
+    if closed or today > date.fromisoformat(str(end)):
+        return '已結案'
+    if today < date.fromisoformat(str(start)):
+        return '準備中'
+    return '進行中'
+
+
+def advertising_state(plans, today):
+    states = [period_state(p['start'], p['end'], today, p.get('status') == '已結案') for p in plans]
+    if not states:
+        return '準備中'
+    if all(s == '已結案' for s in states):
+        return '已結案'
+    if '進行中' in states:
+        return '進行中'
+    return '準備中'
 
 
 def group_summary(plans, results, today, settings):
