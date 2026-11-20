@@ -4,7 +4,7 @@ from datetime import date, datetime
 import pytest
 
 from mori.budgets import (collect_spend, plan_summary, save_group, save_plan,
-                          spend_window, time_progress)
+                          spend_window, time_progress, period_state)
 from mori.core import AppError, TAIPEI, default_settings, rule_window, validate_settings
 
 
@@ -184,3 +184,19 @@ def test_budget_sums_original_decimal_cost_without_per_row_rounding():
     r = collect_spend([s['projects'][0]], {'m': s['accounts'][0]}, fetch, date(2026,11,20))['meta']
     assert r['spend_raw'] == '0.30' and r['spend'] == .3
     assert r['spend_basis'] == 'meta_ad_whole_period'
+
+
+@pytest.mark.parametrize('scope', ['project_groups', 'projects'])
+def test_preparing_management_status_roundtrips_and_pauses_rules(scope):
+    s = sample()
+    rule = {'id': 'r', 'account_key': 'm', 'project_id': 'meta', 'enabled': True, 'period_days': 1}
+    now = datetime(2026, 11, 19, 9, tzinfo=TAIPEI)
+    s[scope][0]['status'] = '準備中'
+    saved = validate_settings(s)
+    assert saved[scope][0]['status'] == '準備中'
+    assert rule_window(rule, saved, now)[2] == '專案準備中'
+    # Manual management doesn't change date-based project navigation or spend windows.
+    assert period_state(saved['project_groups'][0]['start'], saved['project_groups'][0]['end'], now.date()) == '進行中'
+    assert spend_window(saved['projects'][0], now.date()) == (date(2026, 9, 29), date(2026, 11, 18))
+    saved[scope][0]['status'] = '進行中'
+    assert rule_window(rule, saved, now)[2] == '生效中'

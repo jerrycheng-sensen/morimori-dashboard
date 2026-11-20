@@ -61,6 +61,20 @@ BUDGET_STYLES = """<style>
 .st-key-budget_project_content [data-testid="stMetric"]{padding:16px 14px;}
 .st-key-budget_project_content [data-testid="stMetricValue"]{font-size:clamp(22px,2.1vw,32px)!important;}
 @media(max-width:700px){.st-key-budget_project_rail{padding:14px;}.st-key-budget_project_list{height:260px!important;max-height:260px;overflow-y:auto;}}
+
+.mori-editor-intro{padding:24px 26px;background:linear-gradient(110deg,#17421E,#284c2c);border-radius:15px;margin:4px 0 28px;}
+.mori-editor-intro strong{font-size:26px;color:#fff;line-height:1.5;}.mori-editor-intro p{font-size:16px;color:#d9e8d5;margin:8px 0 0;}
+.mori-editor-step{display:flex;align-items:center;gap:16px;margin:32px 0 18px;}.mori-editor-step>span{display:grid;place-items:center;background:#17421E;color:#d6ecb5;border-radius:12px;width:52px;height:52px;font-size:23px;font-weight:800;flex-shrink:0;}
+.mori-editor-step h2{font-size:26px!important;margin:0!important;padding:0!important;color:#17421E;}.mori-editor-step p{font-size:16px;color:#526b54;margin:5px 0 0;}
+.mori-editor-context{padding:18px 22px;border:1px solid #d0dfcc;border-left:5px solid #8eb45f;border-radius:12px;background:#edf4e9;margin:14px 0;}
+.mori-editor-context small{display:block;font-size:14px;color:#526b54;}.mori-editor-context strong{display:block;font-size:23px;color:#17421E;margin:5px 0;overflow-wrap:anywhere;}.mori-editor-context p{font-size:15px;color:#526b54;margin:0;}
+.st-key-budget_settings_editor [data-testid="stForm"]{padding:26px!important;border:1px solid #cbdcca!important;background:#ffffffed;border-radius:15px;box-shadow:0 6px 24px #17421e08;}
+.st-key-budget_settings_editor [data-testid="stWidgetLabel"] p{font-size:16px!important;font-weight:700;color:#244b2a;}
+.st-key-budget_settings_editor [data-testid="stFormSubmitButton"] button{min-height:52px;border-radius:10px;}
+.st-key-budget_settings_editor [data-testid="stFormSubmitButton"] button p{font-size:18px!important;font-weight:700;}
+.st-key-budget_settings_editor [data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"]{background:#17421E;color:white;border:1px solid #17421E;}
+.mori-management-guide{display:flex;gap:12px;margin:8px 0 18px;}.mori-management-guide>div{flex:1;padding:14px;border:1px solid;border-radius:10px;}.mori-management-guide strong{display:block;font-size:17px;margin-bottom:5px;}.mori-management-guide span{font-size:14px;}.mori-management-guide .preparing{background:#fff7e8;border-color:#e4c17b;color:#835414;}.mori-management-guide .running{background:#edf6e9;border-color:#9ac291;color:#17421E;}.mori-management-guide .closed{background:#f0f3f6;border-color:#c3cdd8;color:#526174;}
+@media(max-width:700px){.mori-management-guide{flex-direction:column;}.st-key-budget_settings_editor [data-testid="stForm"]{padding:16px!important;}.mori-editor-intro strong{font-size:22px;}}
 </style>"""
 
 
@@ -92,6 +106,18 @@ def select_budget_section(section):
     st.session_state.budget_section = section
 
 
+def editor_step(number, title, subtitle):
+    st.markdown(f'<div class="mori-editor-step"><span>{number}</span><div><h2>{title}</h2><p>{subtitle}</p></div></div>', unsafe_allow_html=True)
+
+
+def editor_context(mode, name, note):
+    st.markdown(f'<div class="mori-editor-context"><small>{html.escape(mode)}</small><strong>{html.escape(name)}</strong><p>{html.escape(note)}</p></div>', unsafe_allow_html=True)
+
+
+def management_guide():
+    st.markdown('<div class="mori-management-guide"><div class="preparing"><strong>準備中</strong><span>規劃設定・暫不檢查</span></div><div class="running"><strong>進行中</strong><span>依規則及廣告走期檢查</span></div><div class="closed"><strong>已結案</strong><span>停止檢查・保留紀錄</span></div></div>', unsafe_allow_html=True)
+
+
 def render_budgets(settings, fetch, persist):
     st.markdown(BUDGET_STYLES, unsafe_allow_html=True)
     today = datetime.now(TAIPEI).date()
@@ -114,133 +140,149 @@ def render_budgets(settings, fetch, persist):
         if not accounts:
             st.info('請先到「帳號與串接」新增廣告帳號。')
             return
-        st.subheader('1. 專案資料')
-        pending_group = st.session_state.pop('pending_budget_group', None)
-        if pending_group in groups:
-            st.session_state.budget_group_editor = pending_group
-        group_id = st.selectbox('選擇專案', ['new'] + list(groups),
-                               format_func=lambda k: '＋新增專案' if k == 'new' else groups[k]['name'], key='budget_group_editor')
-        group = groups.get(group_id, {})
-        with st.form('budget_group_' + group_id):
-            name = st.text_input('專案名稱', group.get('name', ''), placeholder='例如：感謝祭')
-            a, b = st.columns(2)
-            start = a.date_input('專案開始日', date.fromisoformat(group['start']) if group else today)
-            end = b.date_input('專案結束日', date.fromisoformat(group['end']) if group else today)
-            status = st.selectbox('專案管理狀態（影響異常檢查）', ['進行中', '已結案'], index=int(group.get('status') == '已結案'))
-            st.caption('這裡填完整活動走期。例如感謝祭 10/1～11/30；Meta 的 9/29 預熱另外填在平台廣告走期。總覽的「檔期」標籤只依此日期判斷；此管理狀態用於停止異常檢查，與檔期時間分開。廣告投放結束請在下方平台計畫結案。')
-            if st.form_submit_button('儲存專案資料'):
-                try:
-                    updated = save_group(settings, {'id': group.get('id', uuid.uuid4().hex), 'name': name.strip(),
-                                                    'start': str(start), 'end': str(end), 'status': status})
-                    st.session_state.pending_budget_group = next(g['id'] for g in updated['project_groups'] if g['id'] not in groups) if not group else group['id']
-                    persist(updated, notice='專案資料已儲存。接著在下方新增各平台投放計畫。')
-                except (AppError, ValueError) as exc:
-                    st.error(str(exc))
-        st.subheader('2. Meta／Google 投放計畫')
-        pending_plan = st.session_state.pop('pending_budget_plan', None)
-        if pending_plan and any(p['id'] == pending_plan for p in plans):
-            st.session_state.budget_plan_editor = pending_plan
-        if st.button('＋新增平台計畫'):
-            st.session_state.budget_plan_editor = 'new'
-        def label(k):
-            p = next(x for x in plans if x['id'] == k)
-            parent = groups.get(p.get('group_id'), {}).get('name', '尚未歸入專案')
-            account = accounts[p['account_key']]
-            return f"{parent}｜{'Meta' if account['platform'] == 'meta' else 'Google Ads'}｜{account['name']}"
-        plan_id = st.selectbox('選擇平台投放計畫', ['new'] + [p['id'] for p in plans],
-                              format_func=lambda k: '＋新增平台計畫' if k == 'new' else label(k), key='budget_plan_editor')
-        plan = next((p for p in plans if p['id'] == plan_id), {})
-        # Keep existing ungrouped records editable without silently reassigning them.
-        group_options = [''] + list(groups)
-        account_key = st.selectbox('廣告帳號', list(accounts),
-                          index=list(accounts).index(plan['account_key']) if plan else 0,
-                          format_func=lambda k: accounts[k]['name'], key='budget_plan_account_' + plan_id)
-        google_plan = accounts[account_key]['platform'] == 'google'
-        with st.form('budget_plan_' + plan_id):
-            owner = st.selectbox('所屬專案', group_options,
-                                 index=group_options.index(plan.get('group_id', '')),
-                                 format_func=lambda k: groups[k]['name'] if k else '尚未歸入專案（保留既有設定）', key='budget_plan_owner_' + plan_id)
-            name = st.text_input('平台計畫名稱', plan.get('name', ''), placeholder='例如：含預熱（可留白）', help='專案名稱由上方專案資料管理；這裡只作為設定與紀錄識別，總覽不會重複顯示。留白時自動使用平台名稱。')
-            a, b = st.columns(2)
-            ad_start = a.date_input('廣告開始日（可含預熱）', date.fromisoformat(plan['start']) if plan else today)
-            ad_end = b.date_input('廣告結束日', date.fromisoformat(plan['end']) if plan else today)
-            locked_budget = any(plan.get('id') in impacts(t) for t in settings.get('budget_transactions', []))
-            budget = st.number_input('平台投放預算（與廣告帳號同幣別，不另加稅／服務費）', min_value=0., value=float(plan.get('budget', 0)), step=1000., disabled=locked_budget)
-            if locked_budget:
-                st.caption('已有異動紀錄，原始預算已保留；請到「預算調動與紀錄」辦理追加／減列。')
-            st.caption('0 代表預算尚未設定，總覽會顯示「未設定」，不會計算花費百分比。')
-            from mori.project_matching import FIELDS, conditions
-            if google_plan:
-                st.markdown('**Google 廣告認列條件**')
-                st.caption('一般 Google 廣告：廣告活動 → 廣告群組 → 廣告；PMax：廣告活動 → 素材群組。標題、說明、路徑依各格式提供的內容比對。')
-                st.caption('廣告 ID 是 API 回傳的數字編號；選擇廣告條件時，須填完整 ID 並完全相符。可先用文案預覽，在明細查看 ID；不必先找 ID 才能設定。')
-                st.caption('只計入上述廣告走期；同一廣告符合多個條件只算一次。廣告以 ID 辨識，不需要廣告名稱。')
-                mode = st.selectbox('條件組合', ['all', 'any'], index=int(plan.get('match_mode', 'all') == 'any'),
-                                    format_func=lambda x: '全部條件都符合（AND）' if x == 'all' else '符合任一條件（OR）')
-                existing = conditions(plan)
-                options = [k for k in FIELDS if k != 'ad_name']
-                matching = []
-                for i in range(6):
-                    condition = existing[i] if i < len(existing) else {}
-                    left, right = st.columns([1, 2])
-                    selected = condition.get('field', 'campaign_name')
-                    field_i = left.selectbox(f'認列欄位 {i+1}', options, index=options.index(selected) if selected in options else 0,
-                                            format_func=lambda k: FIELDS[k], key=f'budget_field_{plan_id}_{i}')
-                    text_i = right.text_input(f'包含文字／廣告 ID {i+1}', condition.get('text', ''),
-                                              placeholder='例如：感謝祭；多個文字擇一可填 桃園|新竹', key=f'budget_text_{plan_id}_{i}')
-                    if text_i.strip():
-                        matching.append({'field': field_i, 'text': text_i.strip()})
-                st.caption('空白條件不使用。標題含短標題與長標題；未提供的欄位不會虛構。PMax 命中素材群組文案時，認列的是該素材群組整筆花費，請勿將不同專案素材混放同一群組。')
-                st.caption('文案依 API 目前設定比對，無法還原歷史文案；若曾改稿，請核對廣告 ID 與走期。')
-                field, keyword = (matching[0]['field'], matching[0]['text']) if matching else ('campaign_name', '')
-            else:
-                options = ['campaign_name', 'adset_name', 'ad_name']
-                field = st.selectbox('名稱歸類欄位', options, index=options.index(plan.get('match_field', 'campaign_name')) if plan.get('match_field', 'campaign_name') in options else 0,
-                                     format_func=lambda k: {'campaign_name': '行銷活動名稱（Meta）', 'adset_name': '廣告組合名稱（僅 Meta）', 'ad_name': '廣告名稱（僅 Meta）'}[k])
-                keyword = st.text_input('名稱包含（必填）', plan.get('keyword', ''), placeholder='例如：感謝祭')
-                matching, mode = [], 'all'
-            status = st.selectbox('平台計畫狀態', ['進行中', '已結案'], index=int(plan.get('status') == '已結案'))
-            st.caption('廣告結束日期會停止之後資料日的異常檢查，隔天仍會檢查最後一天；手動結案則立即停止檢查。')
-            if google_plan and st.form_submit_button('預覽認列廣告（不儲存）'):
-                try:
-                    from mori.project_matching import validate_matching
-                    draft = {**plan, 'id': plan.get('id', '_preview'), 'name': name.strip(),
-                             'account_key': account_key, 'start': str(ad_start), 'end': str(ad_end),
-                             'match_field': field, 'keyword': keyword.strip(), 'match_conditions': matching, 'match_mode': mode}
-                    validate_matching(draft, 'google')
-                    if ad_end < ad_start:
-                        raise AppError('廣告結束日不可早於開始日。')
-                    with st.spinner('讀取 Google 廣告並核對認列條件…'):
-                        preview = collect_spend([p for p in plans if p['id'] != draft['id']] + [draft], accounts, fetch, today)[draft['id']]
-                    if preview.get('error'):
-                        raise AppError(preview['error'])
-                    if preview.get('not_started'):
-                        st.info('廣告尚未開始，尚無可預覽的資料。')
-                    else:
-                        st.success(f"預覽花費 {preview['currency']} {preview['spend']:,.2f}；尚未儲存設定。")
-                        for warning in preview.get('warnings', []):
-                            st.warning(warning)
-                        if preview['rows']:
-                            st.dataframe(pd.DataFrame(preview['rows']), hide_index=True, width='stretch')
+        with st.container(key='budget_settings_editor'):
+            st.markdown('<div class="mori-editor-intro"><strong>設定專案，讓預算有清楚的歸屬</strong><p>先儲存專案檔期，再加入 Meta／Google 投放計畫。兩個區塊分別儲存。</p></div>', unsafe_allow_html=True)
+            editor_step('01', '專案資料', '設定案名、完整檔期與管理狀態')
+            pending_group = st.session_state.pop('pending_budget_group', None)
+            if pending_group in groups:
+                st.session_state.budget_group_editor = pending_group
+            group_id = st.selectbox('選擇專案', ['new'] + list(groups),
+                                   format_func=lambda k: '＋新增專案' if k == 'new' else groups[k]['name'], key='budget_group_editor')
+            group = groups.get(group_id, {})
+            editor_context('正在編輯專案' if group else '新增專案', group.get('name', '建立新的廣告專案'),
+                           f"已設定 {sum(p.get('group_id') == group_id for p in plans)} 個平台計畫" if group else '完成後，再往下新增平台投放計畫')
+            with st.form('budget_group_' + group_id):
+                name = st.text_input('專案名稱', group.get('name', ''), placeholder='例如：感謝祭')
+                a, b = st.columns(2)
+                start = a.date_input('專案開始日', date.fromisoformat(group['start']) if group else today)
+                end = b.date_input('專案結束日', date.fromisoformat(group['end']) if group else today)
+                statuses = ['準備中', '進行中', '已結案']
+                status = st.selectbox('專案管理狀態（影響異常檢查）', statuses, index=statuses.index(group.get('status', '準備中')))
+                management_guide()
+                st.info('專案檔期＝活動的完整期間；廣告預熱與實際投放日期，填在下方平台計畫。')
+                st.caption('總覽的檔期狀態依日期判斷；這裡的管理狀態控制異常檢查。只結束廣告時，請結案下方平台計畫，保留仍在進行的專案檔期。')
+                if st.form_submit_button('儲存專案資料', type='primary', width='stretch'):
+                    try:
+                        updated = save_group(settings, {'id': group.get('id', uuid.uuid4().hex), 'name': name.strip(),
+                                                        'start': str(start), 'end': str(end), 'status': status})
+                        st.session_state.pending_budget_group = next(g['id'] for g in updated['project_groups'] if g['id'] not in groups) if not group else group['id']
+                        persist(updated, notice='專案資料已儲存。接著在下方新增各平台投放計畫。')
+                    except (AppError, ValueError) as exc:
+                        st.error(str(exc))
+            editor_step('02', '平台投放計畫', '每個廣告帳號各一筆：預算、廣告走期與認列條件')
+            pending_plan = st.session_state.pop('pending_budget_plan', None)
+            if pending_plan and any(p['id'] == pending_plan for p in plans):
+                st.session_state.budget_plan_editor = pending_plan
+            if st.button('＋新增平台計畫'):
+                st.session_state.budget_plan_editor = 'new'
+            def label(k):
+                p = next(x for x in plans if x['id'] == k)
+                parent = groups.get(p.get('group_id'), {}).get('name', '尚未歸入專案')
+                account = accounts[p['account_key']]
+                return f"{parent}｜{'Meta' if account['platform'] == 'meta' else 'Google Ads'}｜{account['name']}"
+            plan_id = st.selectbox('選擇平台投放計畫', ['new'] + [p['id'] for p in plans],
+                                  format_func=lambda k: '＋新增平台計畫' if k == 'new' else label(k), key='budget_plan_editor')
+            plan = next((p for p in plans if p['id'] == plan_id), {})
+            # Keep existing ungrouped records editable without silently reassigning them.
+            group_options = [''] + list(groups)
+            account_key = st.selectbox('廣告帳號', list(accounts),
+                              index=list(accounts).index(plan['account_key']) if plan else 0,
+                              format_func=lambda k: accounts[k]['name'], key='budget_plan_account_' + plan_id)
+            google_plan = accounts[account_key]['platform'] == 'google'
+            editor_context('正在編輯投放計畫' if plan else '新增投放計畫',
+                           ('Google Ads' if google_plan else 'Meta') + '｜' + groups.get(plan.get('group_id'), {}).get('name', '請選擇所屬專案'),
+                           accounts[account_key]['name'])
+            with st.form('budget_plan_' + plan_id):
+                owner = st.selectbox('所屬專案', group_options,
+                                     index=group_options.index(plan.get('group_id', '')),
+                                     format_func=lambda k: groups[k]['name'] if k else '尚未歸入專案（保留既有設定）', key='budget_plan_owner_' + plan_id)
+                name = st.text_input('平台計畫名稱', plan.get('name', ''), placeholder='例如：含預熱（可留白）', help='專案名稱由上方專案資料管理；這裡只作為設定與紀錄識別，總覽不會重複顯示。留白時自動使用平台名稱。')
+                st.markdown('### 投放期間與預算')
+                a, b = st.columns(2)
+                ad_start = a.date_input('廣告開始日（可含預熱）', date.fromisoformat(plan['start']) if plan else today)
+                ad_end = b.date_input('廣告結束日', date.fromisoformat(plan['end']) if plan else today)
+                locked_budget = any(plan.get('id') in impacts(t) for t in settings.get('budget_transactions', []))
+                budget = st.number_input('平台投放預算（與廣告帳號同幣別，不另加稅／服務費）', min_value=0., value=float(plan.get('budget', 0)), step=1000., disabled=locked_budget)
+                if locked_budget:
+                    st.caption('已有異動紀錄，原始預算已保留；請到「預算調動與紀錄」辦理追加／減列。')
+                st.caption('0 代表預算尚未設定，總覽會顯示「未設定」，不會計算花費百分比。')
+                st.markdown('### 哪些廣告要算進這個專案？')
+                st.caption('使用廣告名稱或文字條件辨識歸屬，避免把其他專案的花費一起算入。')
+                from mori.project_matching import FIELDS, conditions
+                if google_plan:
+                    st.markdown('**Google 廣告認列條件**')
+                    st.caption('一般 Google 廣告：廣告活動 → 廣告群組 → 廣告；PMax：廣告活動 → 素材群組。標題、說明、路徑依各格式提供的內容比對。')
+                    st.caption('廣告 ID 是 API 回傳的數字編號；選擇廣告條件時，須填完整 ID 並完全相符。可先用文案預覽，在明細查看 ID；不必先找 ID 才能設定。')
+                    st.caption('只計入上述廣告走期；同一廣告符合多個條件只算一次。廣告以 ID 辨識，不需要廣告名稱。')
+                    mode = st.selectbox('條件組合', ['all', 'any'], index=int(plan.get('match_mode', 'all') == 'any'),
+                                        format_func=lambda x: '全部條件都符合（AND）' if x == 'all' else '符合任一條件（OR）')
+                    existing = conditions(plan)
+                    options = [k for k in FIELDS if k != 'ad_name']
+                    matching = []
+                    for i in range(6):
+                        condition = existing[i] if i < len(existing) else {}
+                        left, right = st.columns([1, 2])
+                        selected = condition.get('field', 'campaign_name')
+                        field_i = left.selectbox(f'認列欄位 {i+1}', options, index=options.index(selected) if selected in options else 0,
+                                                format_func=lambda k: FIELDS[k], key=f'budget_field_{plan_id}_{i}')
+                        text_i = right.text_input(f'包含文字／廣告 ID {i+1}', condition.get('text', ''),
+                                                  placeholder='例如：感謝祭；多個文字擇一可填 桃園|新竹', key=f'budget_text_{plan_id}_{i}')
+                        if text_i.strip():
+                            matching.append({'field': field_i, 'text': text_i.strip()})
+                    st.caption('空白條件不使用。標題含短標題與長標題；未提供的欄位不會虛構。PMax 命中素材群組文案時，認列的是該素材群組整筆花費，請勿將不同專案素材混放同一群組。')
+                    st.caption('文案依 API 目前設定比對，無法還原歷史文案；若曾改稿，請核對廣告 ID 與走期。')
+                    field, keyword = (matching[0]['field'], matching[0]['text']) if matching else ('campaign_name', '')
+                else:
+                    options = ['campaign_name', 'adset_name', 'ad_name']
+                    field = st.selectbox('名稱歸類欄位', options, index=options.index(plan.get('match_field', 'campaign_name')) if plan.get('match_field', 'campaign_name') in options else 0,
+                                         format_func=lambda k: {'campaign_name': '行銷活動名稱（Meta）', 'adset_name': '廣告組合名稱（僅 Meta）', 'ad_name': '廣告名稱（僅 Meta）'}[k])
+                    keyword = st.text_input('名稱包含（必填）', plan.get('keyword', ''), placeholder='例如：感謝祭')
+                    matching, mode = [], 'all'
+                st.markdown('### 檢查狀態與儲存')
+                statuses = ['準備中', '進行中', '已結案']
+                status = st.selectbox('平台計畫狀態', statuses, index=statuses.index(plan.get('status', '準備中')))
+                st.caption('準備中：暫不執行異常檢查；進行中：依規則及廣告走期檢查；已結案：立即停止檢查。上層專案也必須為進行中，異常檢查才會啟用。')
+                st.caption('廣告結束日期會停止之後資料日的異常檢查，隔天仍會檢查最後一天；手動結案則立即停止檢查。')
+                if google_plan and st.form_submit_button('預覽認列廣告（不儲存）'):
+                    try:
+                        from mori.project_matching import validate_matching
+                        draft = {**plan, 'id': plan.get('id', '_preview'), 'name': name.strip(),
+                                 'account_key': account_key, 'start': str(ad_start), 'end': str(ad_end),
+                                 'match_field': field, 'keyword': keyword.strip(), 'match_conditions': matching, 'match_mode': mode}
+                        validate_matching(draft, 'google')
+                        if ad_end < ad_start:
+                            raise AppError('廣告結束日不可早於開始日。')
+                        with st.spinner('讀取 Google 廣告並核對認列條件…'):
+                            preview = collect_spend([p for p in plans if p['id'] != draft['id']] + [draft], accounts, fetch, today)[draft['id']]
+                        if preview.get('error'):
+                            raise AppError(preview['error'])
+                        if preview.get('not_started'):
+                            st.info('廣告尚未開始，尚無可預覽的資料。')
                         else:
-                            st.info('沒有符合條件的廣告，請檢查走期與文字。')
-                except (AppError, ValueError) as exc:
-                    st.error(str(exc))
-            if st.form_submit_button('儲存平台計畫'):
-                try:
-                    if not owner and not plan:
-                        raise AppError('請先建立並選擇所屬專案，再新增平台計畫。')
-                    updated = save_plan(settings, {'id': plan.get('id', uuid.uuid4().hex), 'name': name.strip() or ('Google Ads' if google_plan else 'Meta'),
-                                                  'account_key': account_key, 'group_id': owner, 'start': str(ad_start),
-                                                  'end': str(ad_end), 'budget': budget, 'match_field': field,
-                                                  'keyword': keyword.strip(), 'status': status,
-                                                  'match_conditions': matching, 'match_mode': mode})
-                    st.session_state.pending_budget_plan = next(p['id'] for p in updated['projects'] if p['id'] not in {x['id'] for x in plans}) if not plan else plan['id']
-                    persist(updated, notice='平台計畫已儲存。預算總覽會自動讀取最新花費。')
-                except (AppError, ValueError) as exc:
-                    st.error(str(exc))
-        st.download_button('匯出設定備份（不含權杖）', json.dumps(settings, ensure_ascii=False, indent=2),
-                           'mori-settings.json', on_click='ignore')
+                            st.success(f"預覽花費 {preview['currency']} {preview['spend']:,.2f}；尚未儲存設定。")
+                            for warning in preview.get('warnings', []):
+                                st.warning(warning)
+                            if preview['rows']:
+                                st.dataframe(pd.DataFrame(preview['rows']), hide_index=True, width='stretch')
+                            else:
+                                st.info('沒有符合條件的廣告，請檢查走期與文字。')
+                    except (AppError, ValueError) as exc:
+                        st.error(str(exc))
+                if st.form_submit_button('儲存平台計畫', type='primary', width='stretch'):
+                    try:
+                        if not owner and not plan:
+                            raise AppError('請先建立並選擇所屬專案，再新增平台計畫。')
+                        updated = save_plan(settings, {'id': plan.get('id', uuid.uuid4().hex), 'name': name.strip() or ('Google Ads' if google_plan else 'Meta'),
+                                                      'account_key': account_key, 'group_id': owner, 'start': str(ad_start),
+                                                      'end': str(ad_end), 'budget': budget, 'match_field': field,
+                                                      'keyword': keyword.strip(), 'status': status,
+                                                      'match_conditions': matching, 'match_mode': mode})
+                        st.session_state.pending_budget_plan = next(p['id'] for p in updated['projects'] if p['id'] not in {x['id'] for x in plans}) if not plan else plan['id']
+                        persist(updated, notice='平台計畫已儲存。預算總覽會自動讀取最新花費。')
+                    except (AppError, ValueError) as exc:
+                        st.error(str(exc))
+            st.download_button('匯出設定備份（不含權杖）', json.dumps(settings, ensure_ascii=False, indent=2),
+                               'mori-settings.json', on_click='ignore')
 
     elif selected == 'ledger':
         render_ledger(settings, fetch, persist)

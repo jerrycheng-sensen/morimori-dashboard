@@ -367,3 +367,22 @@ selection, stale selection reset, year switching and reuse of a single spend
 read across navigation. A local browser screenshot check could not run because
 the execution environment blocks Chromium socket creation; deployed desktop and
 mobile visual appearance has not been independently verified.
+
+### Clear budget settings and preparing management state (2026.11.20.31)
+
+Budget settings now present numbered project/platform steps, a brand-green intro,
+a visible editing-context panel, larger field labels, white form surfaces and
+full-width primary save actions. Project dates and ad dates have separate short
+instructions; budget, attribution and save sections are explicitly labelled.
+Three color-coded management explanations show preparing, running and closed.
+Both project and platform management selectors now support preparing; new forms
+default to preparing, while saved states are retained. Validation accepts and
+round-trips it. A preparing project or plan pauses linked anomaly rules until
+manually changed to running. Closed still stops rules; normal ad-date limits
+still apply. Date-derived project navigation/badges and spend query windows are
+unchanged, as are existing records and ledger amounts. Explanations distinguish
+manual alert management from the date-derived project period.
+Validation: 103 tests pass, including preparing-state validation/persistence,
+rule pause/resume at either level, unchanged cost windows and the existing save,
+ledger, attribution, navigation and precision suites. Deployed visual appearance
+still needs confirmation; no browser screenshot was produced in this environment.

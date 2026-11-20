@@ -51,7 +51,7 @@ def validate_settings(data):
         if not group.get("id") or group["id"] in group_ids or not str(group.get("name", "")).strip():
             raise AppError("專案名稱不可空白，專案代號不可重複。")
         group_ids.add(group["id"])
-        if group.get("status") not in ("進行中", "已結案"):
+        if group.get("status") not in ("準備中", "進行中", "已結案"):
             raise AppError("專案狀態不正確。")
         if date.fromisoformat(group["end"]) < date.fromisoformat(group["start"]):
             raise AppError("專案結束日不可早於開始日。")
@@ -71,7 +71,7 @@ def validate_settings(data):
             raise AppError("每個專案必須指定廣告帳號。")
         if number(project.get("budget", 0)) < 0:
             raise AppError("專案預算不可小於零。")
-        if project.get("status") not in ("進行中", "已結案"):
+        if project.get("status") not in ("準備中", "進行中", "已結案"):
             raise AppError("專案狀態不正確。")
         start, end = date.fromisoformat(project["start"]), date.fromisoformat(project["end"])
         if end < start:
@@ -147,6 +147,8 @@ def rule_window(rule, settings, now=None):
     group = next((g for g in settings.get("project_groups", []) if project and g["id"] == project.get("group_id")), None)
     if group and group.get("status") == "已結案":
         return since, until, "專案已結案"
+    if (project and project.get("status") == "準備中") or (group and group.get("status") == "準備中"):
+        return since, until, "專案準備中"
     starts = [x for x in (rule.get("starts_on"), project.get("start") if project else None) if x]
     ends = [x for x in (rule.get("ends_on"), project.get("end") if project else None) if x]
     start = max(starts) if starts else None

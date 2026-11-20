@@ -111,6 +111,8 @@ def test_budget_group_and_two_platform_plans_save_and_render_separate_progress(m
     next(x for x in app.button if x.label == '儲存專案資料').click().run()
     assert not app.exception
     group = app.session_state['demo_settings']['project_groups'][0]
+    assert group['status'] == '準備中'
+    assert next(x for x in app.selectbox if x.label == '專案管理狀態（影響異常檢查）').options == ['準備中', '進行中', '已結案']
     next(x for x in app.selectbox if x.label == '所屬專案').select(group['id'])
     next(x for x in app.text_input if x.label == '平台計畫名稱').set_value('Meta含預熱')
     next(x for x in app.text_input if x.label == '名稱包含（必填）').set_value('示範')
