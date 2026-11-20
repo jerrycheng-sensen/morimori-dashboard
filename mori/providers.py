@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import requests
 
-from mori.core import AppError, conversion_ready, number
+from mori.core import AppError, TAIPEI, conversion_ready, number
 
 
 def request_json(session, method, url, **kwargs):
@@ -244,7 +244,7 @@ class GoogleProvider:
                              'descriptions': sorted(set(texts['descriptions'])),
                              'paths': [p for p in [group.get('path1'), group.get('path2')] if p],
                              'available_fields': ['headlines', 'descriptions', 'paths']})
-        reconcile(campaign_rows, rows)
+        report['warnings'] = reconcile(campaign_rows, rows, live_date=datetime.now(TAIPEI).date())
         report['rows'] = rows
         report['attribution_detail'] = True
         return report

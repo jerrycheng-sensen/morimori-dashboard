@@ -67,7 +67,7 @@ def normalize(ad):
     return output
 
 
-def reconcile(campaign_rows, detail_rows):
+def reconcile(campaign_rows, detail_rows, live_date=None):
     from mori.core import AppError
     def totals(rows):
         result = {}
@@ -76,5 +76,16 @@ def reconcile(campaign_rows, detail_rows):
             result[key] = result.get(key, 0.) + row['spend']
         return result
     expected, actual = totals(campaign_rows), totals(detail_rows)
-    if any(abs(expected.get(k, 0.) - actual.get(k, 0.)) > .00001 for k in expected.keys() | actual.keys()):
-        raise AppError('Google 廣告／素材群組明細與廣告活動花費未對上；已停止認列，請重新更新或核對平台報表。')
+    warnings = []
+    for key in expected.keys() | actual.keys():
+        delta = actual.get(key, 0.) - expected.get(key, 0.)
+        if abs(delta) <= .00001:
+            continue
+        # Separate live requests cannot form an atomic snapshot. Only tolerate
+        # differences for today when BOTH complete requests returned this key;
+        # missing groups/campaigns and historical discrepancies remain errors.
+        if live_date and key[1] == str(live_date) and key in expected and key in actual:
+            warnings.append(f'今日活動與明細回報尚未同步：廣告活動 ID {key[0]}，活動 {expected[key]:,.2f}、明細 {actual[key]:,.2f}；目前按廣告／素材群組明細認列，後續更新可能回補。')
+        else:
+            raise AppError('Google 廣告／素材群組明細與廣告活動花費未對上；已停止認列，請重新更新或核對平台報表。')
+    return warnings

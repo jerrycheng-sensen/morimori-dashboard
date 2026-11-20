@@ -79,7 +79,7 @@ def render_ledger(settings, fetch, persist):
             effective = st.date_input('生效日期', today, max_value=today) if kind != '沖回紀錄' else today
             reason = st.text_input('異動原因／用途', placeholder='例如：林口結餘轉供感謝祭北部加強')
             confirmed = st.checkbox('已核對相關專案的廣告歸類；確認儲存這筆預算異動')
-            st.caption('送出時會重新讀取相關計畫花費並檢核結餘。資料截至昨天；仍在投放的計畫可能另有今天尚未入帳的花費。')
+            st.caption('送出時會重新讀取相關計畫花費並檢核結餘。包含今日平台已回報的花費；仍可能有尚未回報或回補的花費，轉出前請核對投放狀況。')
             if st.form_submit_button('確認儲存預算異動'):
                 try:
                     if not confirmed:

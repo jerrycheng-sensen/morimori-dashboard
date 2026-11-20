@@ -48,14 +48,14 @@ def test_failure_unknown_budget_and_overspend_are_not_disguised_as_zero_or_compl
     assert r['meta'] == {'error': 'offline'}
 
 
-def test_future_plan_does_not_call_api_and_current_day_is_excluded():
+def test_future_plan_does_not_call_api_and_today_is_included():
     plan = sample()['projects'][0]
     def forbidden(*_):
         raise AssertionError('future plan must not fetch')
-    r = collect_spend([plan], {'m': {}}, forbidden, date(2026, 9, 29))
+    r = collect_spend([plan], {'m': {}}, forbidden, date(2026, 9, 28))
     assert r['meta']['not_started']
-    assert plan_summary(plan, r['meta'], date(2026, 9, 29))['spend'] is None
-    assert spend_window(plan, date(2026, 10, 2)) == (date(2026, 9, 29), date(2026, 10, 1))
+    assert plan_summary(plan, r['meta'], date(2026, 9, 28))['spend'] is None
+    assert spend_window(plan, date(2026, 10, 2)) == (date(2026, 9, 29), date(2026, 10, 2))
     assert time_progress('2026-11-18', '2026-11-18', date(2026, 11, 18)) == 1
 
 
@@ -140,3 +140,21 @@ def test_identical_account_windows_fetch_once_and_still_filter_projects_independ
     result = collect_spend(plans, {'m':{'key':'m','platform':'meta'}}, fetch, date(2026,11,20))
     assert len(calls) == 1
     assert result[p['id']]['spend'] == 100 and result['second']['spend'] == 200
+
+
+
+def test_live_budget_includes_first_and_last_ad_day_and_caps_ended_plans():
+    p = sample()['projects'][0]
+    windows = []
+    def fetch(account,start,end):
+        windows.append((start,end))
+        return {'currency':'TWD','rows':[{'campaign_name':'感謝祭','spend':99,'currency':'TWD'}]}
+    accounts = {'m':{'platform':'meta'}}
+    first = collect_spend([p],accounts,fetch,date(2026,9,29))['meta']
+    assert windows[-1] == (date(2026,9,29),date(2026,9,29))
+    assert first['includes_today'] and first['spend'] == 99
+    last = collect_spend([p],accounts,fetch,date(2026,11,18))['meta']
+    assert windows[-1][1] == date(2026,11,18) and last['includes_today']
+    assert plan_summary(p,last,date(2026,11,18))['remaining'] == 1
+    ended = collect_spend([p],accounts,fetch,date(2026,11,20))['meta']
+    assert windows[-1][1] == date(2026,11,18) and not ended['includes_today']

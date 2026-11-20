@@ -5,13 +5,13 @@ import copy
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from mori.core import AppError
 
 
 def configuration_key(settings):
-    return hashlib.sha256(json.dumps(['google-attribution-v2', settings.get('projects', []), settings.get('project_groups', []),
+    return hashlib.sha256(json.dumps(['google-attribution-v3-include-today', settings.get('projects', []), settings.get('project_groups', []),
                                      settings.get('accounts', [])], sort_keys=True).encode()).hexdigest()
 
 
@@ -22,7 +22,7 @@ def time_progress(start, end, through):
 
 def spend_window(plan, today):
     start = date.fromisoformat(plan['start'])
-    end = min(date.fromisoformat(plan['end']), today - timedelta(days=1))
+    end = min(date.fromisoformat(plan['end']), today)
     return (start, end) if start <= end else None
 
 
@@ -42,7 +42,7 @@ def plan_summary(plan, result, today, settings=None):
     percent = spend / budget if known and budget > 0 else None
     return {'state': state, 'budget': budget, 'spend': spend,
             'remaining': budget - spend if spend is not None else None, 'ratio': percent,
-            'time_ratio': time_progress(plan['start'], plan['end'], today - timedelta(days=1)),
+            'time_ratio': time_progress(plan['start'], plan['end'], today),
             'currency': result.get('currency') if known else None}
 
 
@@ -81,7 +81,7 @@ def group_summary(plans, results, today, settings):
 
 
 def collect_spend(plans, accounts, fetch, today):
-    """A failed read remains unknown, never zero. Each plan uses its whole ad window."""
+    """A failed read remains unknown, never zero. Each plan includes reported spend today, capped at its ad end date."""
     def one(plan, report):
         window = spend_window(plan, today)
         if not window:
@@ -93,7 +93,7 @@ def collect_spend(plans, accounts, fetch, today):
         if accounts[plan['account_key']].get('platform') == 'google' and any(c['field'] != 'campaign_name' for c in rules) and not report.get('attribution_detail'):
             raise AppError('尚未取得 Google 廣告明細，不能用文案或廣告群組認列花費。')
         rows = [r for r in report['rows'] if matches(plan, r)]
-        warnings = []
+        warnings = list(report.get('warnings', []))
         if accounts[plan['account_key']].get('platform') == 'google' and any(c['field'] != 'campaign_name' for c in rules):
             warnings.append('文案為 API 目前設定，不代表歷史每次曝光的文案；花費以整則廣告／整個素材群組與設定走期認列。')
             if any(r.get('channel') == 'PERFORMANCE_MAX' for r in rows):
@@ -114,7 +114,7 @@ def collect_spend(plans, accounts, fetch, today):
         if spend < 0:
             raise AppError('回傳負花費，請先核對平台帳務調整。')
         return {'spend': spend, 'currency': report['currency'], 'since': str(start), 'until': str(end),
-                'rows': rows, 'timezone': report.get('timezone'), 'warnings': warnings}
+                'rows': rows, 'timezone': report.get('timezone'), 'warnings': warnings, 'includes_today': end == today}
     results = {}
     # Several projects often share the same account/window. Fetch once, then
     # apply each plan's attribution independently; never share across accounts.

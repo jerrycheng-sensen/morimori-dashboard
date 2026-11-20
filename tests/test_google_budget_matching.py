@@ -150,3 +150,16 @@ def test_unavailable_copy_warns_instead_of_silently_losing_cost_and_reconciliati
     assert result['spend'] == 0 and any('120.00' in w and 'IMAGE_AD' in w for w in result['warnings'])
     with pytest.raises(AppError, match='未對上'):
         reconcile(rows, [{**rows[0],'spend':100}])
+
+
+
+def test_only_today_snapshot_drift_can_use_detail_cost_with_explicit_warning():
+    from mori.google_creatives import reconcile
+    campaign = [{'campaign_id':'1','date':'2026-11-20','spend':100}]
+    detail = [{'campaign_id':'1','date':'2026-11-20','spend':105}]
+    warnings = reconcile(campaign,detail,live_date=date(2026,11,20))
+    assert len(warnings) == 1 and '100.00' in warnings[0] and '105.00' in warnings[0]
+    with pytest.raises(AppError):
+        reconcile(campaign,detail,live_date=date(2026,11,21))
+    with pytest.raises(AppError):
+        reconcile(campaign,[],live_date=date(2026,11,20))

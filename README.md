@@ -238,3 +238,21 @@ Validation: 87 tests, including opening without clicking refresh, reentry,
 filtering without repeated reads, refresh expiry, settings/date invalidation,
 request deduplication and existing financial/attribution/UI flows. Browser timer
 scheduling and live API latency still require observing the deployed app.
+
+### Include today's reported spend (2026.11.20.25)
+
+Budget overview, previews and transfer validation now read through today in
+Asia/Taipei, capped at each plan's ad end date. The first and final ad days can
+therefore show reported spend before the day ends. Current-day figures are marked
+即時數據 / 含今日未完整花費 and note platform reporting delays and later adjustments.
+Automatic entry/minute refresh remains enabled. Snapshot keys invalidate earlier
+through-yesterday budget data. Anomaly evaluation and scheduled LINE checks keep
+their previous completed-day windows.
+
+Today's Google campaign and detail requests are separate snapshots: a cost drift
+is explicitly reported and detail cost is used only when both requests returned
+the campaign/day key. Missing keys and historical discrepancies still fail closed.
+This does not stop ads or change platform budgets; it updates decision visibility.
+Validation: 89 tests, including ad start/end-day inclusion, ended-plan limits,
+current-day snapshot drift versus historical/missing-data failures, and existing
+anomaly date boundaries. Live deployment/API timing has not been observed.

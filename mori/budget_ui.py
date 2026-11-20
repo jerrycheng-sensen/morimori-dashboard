@@ -20,7 +20,7 @@ def render_budgets(settings, fetch, persist):
     groups = {g['id']: g for g in settings.get('project_groups', [])}
     accounts = {a['key']: a for a in settings['accounts']}
     plans = settings['projects']
-    st.caption('專案走期、各平台廣告走期分開管理；花費累計完整廣告走期，含預熱，資料截至昨天（台灣時間）。')
+    st.caption('即時數據｜累計各平台廣告走期花費，含預熱及今日已回報的花費；已結束計畫累計至廣告結束日。')
     overview, edit, ledger = st.tabs(['預算總覽', '新增／編輯設定', '預算調動與紀錄'])
     with overview:
         render_budget_overview(settings, fetch)
@@ -129,7 +129,7 @@ def render_budgets(settings, fetch, persist):
                     if preview.get('error'):
                         raise AppError(preview['error'])
                     if preview.get('not_started'):
-                        st.info('廣告尚未開始，尚無完整資料日可以預覽。')
+                        st.info('廣告尚未開始，尚無可預覽的資料。')
                     else:
                         st.success(f"預覽花費 {preview['currency']} {preview['spend']:,.2f}；尚未儲存設定。")
                         for warning in preview.get('warnings', []):
@@ -174,7 +174,7 @@ def render_budget_overview(settings, fetch):
     now = datetime.now(TAIPEI)
     if refresh_due(settings, view, now, force=manual or entered):
         started = now.isoformat()
-        with st.spinner('自動讀取各平台完整廣告走期花費…'):
+        with st.spinner('自動讀取各平台最新花費（含今日）…'):
             results = collect_spend(plans, accounts, fetch, today)
         completed = datetime.now(TAIPEI)
         view = {'key': configuration_key(settings), 'results': results,
@@ -187,7 +187,8 @@ def render_budget_overview(settings, fetch):
         errors = sum(bool(r.get('error')) for r in results.values())
         if errors:
             st.warning(f'{errors} 個平台計畫更新失敗，未列為零花費；約一分鐘後自動重試。')
-        st.caption(f'自動更新開啟・資料讀取時間 {stamp}（台灣時間）・停留本頁約每分鐘更新・花費截至昨天')
+        st.caption(f'自動更新開啟・資料讀取時間 {stamp}（台灣時間）・停留本頁約每分鐘更新・包含今日未完整花費')
+    st.caption('數據依廣告平台最新回報，可能延遲或事後回補，非逐秒最終帳單；請留意剩餘預算。異常通知仍檢查昨天完整資料。')
     money_filter = st.selectbox('預算狀況', ['全部', '已超支', '廣告結束有結餘'], key='budget_money_filter')
     def visible(plan):
         if money_filter == '全部':
@@ -266,9 +267,13 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
     # Project title belongs to the outer envelope; plan name stays in the details.
     st.markdown('#### ' + platform)
     st.caption(f"廣告走期　{plan['start']} ～ {plan['end']}　｜　{data['state']}")
+    if (result or {}).get('includes_today'):
+        st.caption('即時數據・含今日未完整花費，平台可能延遲回報或回補。')
     if not plan.get('group_id'):
         st.caption('平台計畫：' + plan['name'])
     warnings = (result or {}).get('warnings', [])
+    if any('今日活動與明細' in w for w in warnings):
+        st.warning('今日活動與明細回報尚未同步，目前依明細認列；後續更新可能回補。')
     if any('未提供全部' in w for w in warnings):
         st.warning('部分廣告缺少選定的文案欄位；請展開下方明細核對未納入的花費。')
     if result and result.get('error'):
@@ -290,7 +295,7 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
         color = '#c34236' if ratio > 1 else '#17421E'
         st.markdown(f'<div style="height:8px;background:#e2e9df;border-radius:10px;margin:12px 0 8px" role="img" aria-label="花費進度 {ratio:.1%}">'
                     f'<div style="width:{max(0,min(100,ratio*100)):.3f}%;height:100%;background:{color};border-radius:10px"></div></div>', unsafe_allow_html=True)
-        st.caption(f'花費 {ratio:.1%}・廣告走期進度 {data["time_ratio"]:.0%}（截至資料日）')
+        st.caption(f'花費 {ratio:.1%}・廣告走期進度 {data["time_ratio"]:.0%}（含資料日）')
         if ratio > 1:
             st.warning('已超過此平台預算。')
     history = records(settings, plan['id'])
