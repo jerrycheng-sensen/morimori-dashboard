@@ -1,0 +1,87 @@
+import copy
+from datetime import date, datetime
+
+import pytest
+
+from mori.budgets import (collect_spend, plan_summary, save_group, save_plan,
+                          spend_window, time_progress)
+from mori.core import AppError, TAIPEI, default_settings, rule_window, validate_settings
+
+
+def sample():
+    s = default_settings()
+    s['accounts'] = [{'key': 'm', 'platform': 'meta', 'name': 'Meta', 'account_id': '1'},
+                     {'key': 'g', 'platform': 'google', 'name': 'Google', 'account_id': '2'}]
+    s = save_group(s, {'id': 'f', 'name': '感謝祭', 'start': '2026-10-01', 'end': '2026-11-30', 'status': '進行中'})
+    plan = {'id': 'meta', 'name': 'Meta預熱', 'account_key': 'm', 'group_id': 'f', 'start': '2026-09-29',
+            'end': '2026-11-18', 'status': '進行中', 'budget': 100, 'keyword': '感謝祭', 'match_field': 'campaign_name'}
+    s = save_plan(s, plan)
+    s = save_plan(s, {**plan, 'id': 'google', 'name': 'Google', 'account_key': 'g', 'start': '2026-10-01'})
+    return s
+
+
+def test_platform_ad_dates_include_preheat_and_remain_independent_of_project_dates():
+    s = sample()
+    windows = {}
+    def fetch(account, start, end):
+        windows[account['key']] = (str(start), str(end))
+        return {'currency': 'TWD', 'timezone': 'Asia/Taipei', 'rows': [
+            {'campaign_name': '感謝祭', 'spend': 96, 'currency': 'TWD'},
+            {'campaign_name': 'other', 'spend': 500, 'currency': 'TWD'}]}
+    result = collect_spend(s['projects'], {a['key']: a for a in s['accounts']}, fetch, date(2026, 11, 20))
+    assert windows == {'m': ('2026-09-29', '2026-11-18'), 'g': ('2026-10-01', '2026-11-18')}
+    summary = plan_summary(s['projects'][0], result['meta'], date(2026, 11, 20))
+    assert summary['spend'] == 96 and summary['ratio'] == .96 and summary['remaining'] == 4
+    assert summary['time_ratio'] == 1 and summary['state'] == '廣告走期已結束'
+
+
+def test_failure_unknown_budget_and_overspend_are_not_disguised_as_zero_or_complete():
+    plan = sample()['projects'][0]
+    assert plan_summary(plan, {'error': 'API'}, date(2026, 11, 20))['spend'] is None
+    unknown = plan_summary({**plan, 'budget': 0}, {'spend': 96, 'currency': 'TWD'}, date(2026, 11, 20))
+    assert unknown['ratio'] is None and unknown['spend'] == 96
+    over = plan_summary(plan, {'spend': 110, 'currency': 'TWD'}, date(2026, 11, 20))
+    assert over['ratio'] == 1.1 and over['remaining'] == -10
+    def fail(*_):
+        raise AppError('offline')
+    r = collect_spend([plan], {'m': {}}, fail, date(2026, 11, 20))
+    assert r['meta'] == {'error': 'offline'}
+
+
+def test_future_plan_does_not_call_api_and_current_day_is_excluded():
+    plan = sample()['projects'][0]
+    def forbidden(*_):
+        raise AssertionError('future plan must not fetch')
+    r = collect_spend([plan], {'m': {}}, forbidden, date(2026, 9, 29))
+    assert r['meta']['not_started']
+    assert plan_summary(plan, r['meta'], date(2026, 9, 29))['spend'] is None
+    assert spend_window(plan, date(2026, 10, 2)) == (date(2026, 9, 29), date(2026, 10, 1))
+    assert time_progress('2026-11-18', '2026-11-18', date(2026, 11, 18)) == 1
+
+
+def test_existing_plan_id_rules_and_unknown_fields_survive_linking():
+    s = sample()
+    p = s['projects'][0]
+    p.pop('group_id')
+    p['extra'] = 'retain'
+    rule = {'id': 'r', 'name': 'CPA', 'account_key': 'm', 'project_id': p['id'], 'enabled': True,
+            'level': 'ad', 'period_days': 1, 'minimum_spend': 50, 'cpa_threshold': 50}
+    s['rules'] = [rule]
+    updated = save_plan(s, {**p, 'group_id': 'f'})
+    assert updated['projects'][0]['id'] == p['id'] and updated['projects'][0]['extra'] == 'retain'
+    assert updated['rules'][0] == rule
+    assert rule_window(rule, updated, datetime(2026, 11, 19, 9, tzinfo=TAIPEI))[2] == '生效中'
+    assert rule_window(rule, updated, datetime(2026, 11, 20, 9, tzinfo=TAIPEI))[2] == '已到期'
+    updated['project_groups'][0]['status'] = '已結案'
+    assert rule_window(rule, updated, datetime(2026, 11, 19, 9, tzinfo=TAIPEI))[2] == '專案已結案'
+
+
+def test_duplicate_budget_account_and_linked_rule_account_change_rejected():
+    s = sample()
+    with pytest.raises(AppError, match='只能有一筆'):
+        save_plan(s, {**s['projects'][0], 'id': 'duplicate'})
+    s['rules'] = [{'id': 'r', 'project_id': 'meta'}]
+    with pytest.raises(AppError, match='異常規則'):
+        save_plan(s, {**s['projects'][0], 'account_key': 'g'})
+    old = default_settings()
+    assert validate_settings(old) == old  # no forced rewrite of legacy settings

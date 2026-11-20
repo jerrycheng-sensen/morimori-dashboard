@@ -21,6 +21,7 @@ from mori.providers import GoogleProvider, provider_for
 from mori.runner import check_rules, conversion_label
 from mori.storage import GitHubStore
 from mori.ui_performance import UIStore, fetch_accounts
+from mori.budget_ui import render_budgets
 from mori.dashboard import CSS as DASHBOARD_CSS, render_report as render_overview
 from mori.vault import resolve_credentials
 from mori.connection_ui import connection_panel
@@ -81,7 +82,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.17.17")
+st.sidebar.caption("系統版本：2026.11.20.18")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 with st.sidebar.expander("品牌外觀"):
@@ -123,6 +124,7 @@ def save_settings(updated, notice=None, rule_id=None):
         else:
             store.write("settings.json", validated, settings_sha)
         st.session_state.pop("report_view", None)
+        st.session_state.pop("budget_view", None)
         st.session_state.save_notice = (notice or "設定已儲存。") if not demo else "示範設定已更新，僅保留在這次預覽。"
         if rule_id:
             st.session_state.pending_rule_selection = rule_id
@@ -280,50 +282,11 @@ elif page == "API 與權杖設定":
     connection_panel(store, creds, secret, settings["accounts"], demo)
 
 elif page == "專案預算":
-    st.caption("以專案完整起訖日的花費計算預算結餘；不以局部查詢區間取代累計花費。不把帳號花費上限當成代理商儲值餘額。")
-    if not names:
-        st.info("請先新增廣告帳號。")
-    else:
-        project_names = {p["id"]: p["name"] for p in settings["projects"]}
-        choice = st.selectbox("專案", ["新增專案"] + list(project_names), format_func=lambda k: project_names.get(k, k))
-        project = next((p for p in settings["projects"] if p["id"] == choice), {})
-        with st.form("project"):
-            name = st.text_input("專案名稱", project.get("name", ""))
-            account_key = st.selectbox("廣告帳號", list(names), index=list(names).index(project["account_key"]) if project else 0, format_func=names.get)
-            field_options = ["campaign_name", "adset_name", "ad_name"]
-            match_field = st.selectbox("名稱歸類欄位", field_options, index=field_options.index(project.get("match_field", "campaign_name")),
-                                       format_func=lambda value: {"campaign_name": "行銷活動名稱", "adset_name": "廣告組合名稱（Meta）", "ad_name": "廣告名稱（Meta，沿用舊版分類方式）"}[value])
-            keyword = st.text_input("名稱包含", project.get("keyword", ""))
-            start = st.date_input("開始日", date.fromisoformat(project["start"]) if project else datetime.now(TAIPEI).date())
-            end = st.date_input("結束日", date.fromisoformat(project["end"]) if project else datetime.now(TAIPEI).date())
-            budget = st.number_input("平台投放預算（與 API 花費相同幣別；不含另計服務費／稅）", min_value=0.0, value=float(project.get("budget", 0)), step=1000.0)
-            status = st.selectbox("狀態", ["進行中", "已結案"], index=1 if project.get("status") == "已結案" else 0)
-            if st.form_submit_button("儲存專案"):
-                item = {"id": project.get("id", uuid.uuid4().hex), "name": name.strip(), "account_key": account_key,
-                        "keyword": keyword.strip(), "match_field": match_field, "start": str(start), "end": str(end), "budget": budget, "status": status}
-                updated = copy.deepcopy(settings)
-                updated["projects"] = [p for p in updated["projects"] if p["id"] != item["id"]] + [item]
-                save_settings(updated)
-        if st.button("更新各專案完整期間花費"):
-            results = []
-            for project in settings["projects"]:
-                try:
-                    account = account_by_key[project["account_key"]]
-                    effective_end = min(date.fromisoformat(project["end"]), datetime.now(TAIPEI).date())
-                    if effective_end < date.fromisoformat(project["start"]):
-                        results.append({"專案": project["name"], "狀態": "尚未開始"})
-                        continue
-                    report = (demo_reports(date.fromisoformat(project["start"]), effective_end)[0] if demo else fetch_report(account, project["start"], effective_end))
-                    rows = [r for r in report["rows"] if project["keyword"].casefold() in r.get(project.get("match_field", "campaign_name"), "").casefold()]
-                    spent = sum(r["spend"] for r in rows)
-                    results.append({"專案": project["name"], "狀態": project["status"], "起日": project["start"], "迄日": str(effective_end),
-                                    "幣別": report["currency"], "預算": project["budget"], "花費": spent, "結餘／透支": project["budget"] - spent,
-                                    "執行率 %": 100 * spent / project["budget"] if project["budget"] else None})
-                except AppError as exc:
-                    results.append({"專案": project["name"], "狀態": str(exc)})
-            st.dataframe(pd.DataFrame(results), hide_index=True, use_container_width=True)
-            st.caption("專案名稱篩選可能重疊，故此處不將專案花費相加作為全帳號總花費。")
-        st.download_button("匯出設定備份（不含權杖）", json.dumps(settings, ensure_ascii=False, indent=2), "mori-settings.json")
+    def budget_fetch(account, start, end):
+        if demo:
+            return next(r for r in demo_reports(start, end) if r['rows'][0]['account_key'] == account['key'])
+        return fetch_report(account, start, end)
+    render_budgets(settings, budget_fetch, save_settings)
 
 elif page == "異常規則":
     st.write("判斷條件：花費 > 門檻，而且（零轉換，或 CPA > 門檻）。資料截至昨天，避開今天尚未完整的數據。")
@@ -359,13 +322,13 @@ elif page == "異常規則":
         account_key = st.selectbox("規則指定帳號", list(names), index=list(names).index(rule["account_key"]) if rule else 0, format_func=names.get, key="rule_account_" + choice)
         available_projects = {p["id"]: p for p in settings["projects"] if p["account_key"] == account_key}
         project_options = [""] + list(available_projects)
-        project_id = st.selectbox("連結廣告專案（選填）", project_options,
+        project_id = st.selectbox("連結平台投放計畫（選填）", project_options,
             index=project_options.index(rule.get("project_id", "")) if rule.get("project_id", "") in project_options else 0,
             format_func=lambda k: "不連結，使用規則自己的起訖日" if not k else available_projects[k]["name"],
             key="rule_project_" + choice + "_" + account_key)
         linked_project = available_projects.get(project_id)
         if linked_project:
-            st.info(f"跟隨專案期間：{linked_project['start']} ～ {linked_project['end']}；狀態：{linked_project['status']}。專案日期或結案狀態更新時，規則會同步套用。")
+            st.info(f"跟隨此平台廣告走期：{linked_project['start']} ～ {linked_project['end']}；狀態：{linked_project['status']}。專案日期或結案狀態更新時，規則會同步套用。")
         google = account_by_key[account_key]["platform"] == "google"
         if not conversion_ready(account_by_key[account_key]):
             st.warning("此帳號還沒有轉換口徑，請先到「帳號與串接」設定；排程不會把它當成零轉換。")
@@ -512,4 +475,3 @@ elif page == "執行紀錄":
                 st.rerun()
             except AppError as exc:
                 st.error(str(exc))
-

@@ -46,10 +46,27 @@ def validate_settings(data):
             raise AppError("Google 轉換口徑不正確。")
         if any(not str(x).isdigit() for x in account.get("google_action_ids", [])):
             raise AppError("Google 轉換動作 ID 必須是數字。")
+    group_ids = set()
+    for group in data.get("project_groups", []):
+        if not group.get("id") or group["id"] in group_ids or not str(group.get("name", "")).strip():
+            raise AppError("專案名稱不可空白，專案代號不可重複。")
+        group_ids.add(group["id"])
+        if group.get("status") not in ("進行中", "已結案"):
+            raise AppError("專案狀態不正確。")
+        if date.fromisoformat(group["end"]) < date.fromisoformat(group["start"]):
+            raise AppError("專案結束日不可早於開始日。")
+    group_accounts = set()
     for project in data.get("projects", []):
         if not project.get("id") or project["id"] in project_ids or not project.get("name"):
             raise AppError("專案名稱不可空白，專案代號不可重複。")
         project_ids.add(project["id"])
+        if project.get("group_id"):
+            if project["group_id"] not in group_ids:
+                raise AppError("平台計畫指定的專案不存在。")
+            pair = (project["group_id"], project.get("account_key"))
+            if pair in group_accounts:
+                raise AppError("同一專案的同一廣告帳號只能有一筆平台預算，請編輯既有計畫。")
+            group_accounts.add(pair)
         if project.get("account_key") not in account_ids:
             raise AppError("每個專案必須指定廣告帳號。")
         if number(project.get("budget", 0)) < 0:
@@ -129,6 +146,9 @@ def rule_window(rule, settings, now=None):
     if rule.get("project_id") and not project:
         return since, until, "關聯專案不存在"
     if project and project.get("status") == "已結案":
+        return since, until, "專案已結案"
+    group = next((g for g in settings.get("project_groups", []) if project and g["id"] == project.get("group_id")), None)
+    if group and group.get("status") == "已結案":
         return since, until, "專案已結案"
     starts = [x for x in (rule.get("starts_on"), project.get("start") if project else None) if x]
     ends = [x for x in (rule.get("ends_on"), project.get("end") if project else None) if x]

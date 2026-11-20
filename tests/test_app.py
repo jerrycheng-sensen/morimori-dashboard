@@ -97,3 +97,46 @@ def test_live_navigation_reuses_reads_and_only_execution_page_loads_runtime(monk
         assert settings_read.call_count == 2
         assert vault_read.call_count == 2
         assert not app.exception
+
+
+def test_budget_group_and_two_platform_plans_save_and_render_separate_progress(monkeypatch):
+    from datetime import date
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    app = AppTest.from_file(APP, default_timeout=15).run()
+    app.sidebar.radio[0].set_value('專案預算').run()
+    next(x for x in app.text_input if x.label == '專案名稱').set_value('感謝祭')
+    next(x for x in app.date_input if x.label == '專案開始日').set_value(date(2026,10,1))
+    next(x for x in app.date_input if x.label == '專案結束日').set_value(date(2026,11,30))
+    next(x for x in app.button if x.label == '儲存專案資料').click().run()
+    assert not app.exception
+    group = app.session_state['demo_settings']['project_groups'][0]
+    next(x for x in app.selectbox if x.label == '所屬專案').select(group['id'])
+    next(x for x in app.text_input if x.label == '平台計畫名稱').set_value('Meta含預熱')
+    next(x for x in app.text_input if x.label == '名稱包含（必填）').set_value('示範')
+    next(x for x in app.date_input if x.label == '廣告開始日（可含預熱）').set_value(date(2026,9,29))
+    next(x for x in app.date_input if x.label == '廣告結束日').set_value(date(2026,11,18))
+    next(x for x in app.number_input if x.label.startswith('平台投放預算')).set_value(100000.)
+    next(x for x in app.button if x.label == '儲存平台計畫').click().run()
+    assert not app.exception
+    assert len(app.session_state['demo_settings']['projects']) == 1, [e.value for e in app.error]
+    next(x for x in app.button if x.label == '＋新增平台計畫').click().run()
+    next(x for x in app.selectbox if x.label == '所屬專案').select(group['id'])
+    next(x for x in app.text_input if x.label == '名稱包含（必填）').set_value('示範')
+    next(x for x in app.date_input if x.label == '廣告結束日').set_value(date(2026,11,18))
+    next(x for x in app.text_input if x.label == '平台計畫名稱').set_value('Google')
+    next(x for x in app.selectbox if x.label == '廣告帳號').select('demo_google')
+    next(x for x in app.date_input if x.label == '廣告開始日（可含預熱）').set_value(date(2026,10,1))
+    next(x for x in app.button if x.label == '儲存平台計畫').click().run()
+    assert not app.exception
+    assert len(app.session_state['demo_settings']['projects']) == 2
+    next(x for x in app.button if x.label == '更新完整廣告走期花費').click().run()
+    assert not app.exception
+    assert len(app.session_state['budget_view']['results']) == 2
+    assert sum(x.label == '花費進度' for x in app.metric) == 2
+    saved = app.session_state['demo_settings']['projects'][0]
+    app.selectbox(key='budget_plan_editor').select(saved['id']).run()
+    next(x for x in app.text_input if x.label == '平台計畫名稱').set_value('Meta已更新')
+    next(x for x in app.button if x.label == '儲存平台計畫').click().run()
+    assert not app.exception
+    assert len(app.session_state['demo_settings']['projects']) == 2
+    assert app.session_state['demo_settings']['projects'][0]['name'] == 'Meta已更新'
