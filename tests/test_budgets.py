@@ -109,3 +109,34 @@ def test_project_rollup_uses_adjusted_allocations_and_never_totals_missing_or_mi
     s['projects'][1]['budget'] = 0
     unset = group_summary(s['projects'], results, today, s)
     assert unset['spend'] == pytest.approx(235647.53) and unset['budget'] is None and unset['ratio'] is None
+
+
+def test_budget_refresh_policy_for_entry_expiry_settings_and_day_rollover():
+    from datetime import timedelta
+    from mori.budgets import refresh_due, configuration_key
+    s = sample()
+    now = datetime(2026,11,20,9,0,tzinfo=TAIPEI)
+    view = {'key':configuration_key(s),'at':now.isoformat(), 'date':str(now.date())}
+    assert refresh_due(s, None, now)
+    assert not refresh_due(s, view, now + timedelta(seconds=59))
+    assert refresh_due(s, view, now + timedelta(seconds=60))
+    assert refresh_due(s, view, now, force=True)
+    updated = copy.deepcopy(s)
+    updated['projects'][0]['keyword'] = '新條件'
+    assert refresh_due(updated, view, now)
+    assert refresh_due(s, view, now + timedelta(days=1))
+    assert refresh_due(s, {**view,'at':'invalid'}, now)
+    assert not refresh_due({**s,'projects':[]}, None, now, force=True)
+
+
+def test_identical_account_windows_fetch_once_and_still_filter_projects_independently():
+    calls = []
+    p = sample()['projects'][0]
+    plans = [p, {**p,'id':'second','keyword':'開幕'}]
+    def fetch(account, start, end):
+        calls.append((account['key'],start,end))
+        return {'currency':'TWD','rows':[{'campaign_name':'感謝祭','spend':100,'currency':'TWD'},
+                                       {'campaign_name':'開幕','spend':200,'currency':'TWD'}]}
+    result = collect_spend(plans, {'m':{'key':'m','platform':'meta'}}, fetch, date(2026,11,20))
+    assert len(calls) == 1
+    assert result[p['id']]['spend'] == 100 and result['second']['spend'] == 200

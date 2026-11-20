@@ -133,7 +133,7 @@ def test_budget_group_and_two_platform_plans_save_and_render_separate_progress(m
     next(x for x in app.button if x.label == '儲存平台計畫').click().run()
     assert not app.exception
     assert len(app.session_state['demo_settings']['projects']) == 2, [e.value for e in app.error]
-    next(x for x in app.button if x.label == '更新完整廣告走期花費').click().run()
+    next(x for x in app.button if x.label == '重新讀取').click().run()
     assert not app.exception
     assert len(app.session_state['budget_view']['results']) == 2
     assert sum(x.label == '花費進度' for x in app.metric) == 2
@@ -161,7 +161,7 @@ def test_budget_transfer_ui_posts_once_and_updates_both_cards(monkeypatch):
     app.session_state['demo_settings'] = s
     app.run()
     app.sidebar.radio[0].set_value('專案預算').run()
-    next(x for x in app.button if x.label == '更新完整廣告走期花費').click().run()
+    next(x for x in app.button if x.label == '重新讀取').click().run()
     next(x for x in app.number_input if x.label == '轉移金額').set_value(36386.)
     next(x for x in app.text_input if x.label == '異動原因／用途').set_value('北部加強')
     next(x for x in app.checkbox if x.label.startswith('已核對相關專案')).check()
@@ -184,3 +184,39 @@ def test_budget_transfer_ui_posts_once_and_updates_both_cards(monkeypatch):
     updated = app.session_state['demo_settings']
     assert len(updated['budget_transactions']) == 2
     assert balance(updated,'a')['adjusted'] == 60000 and balance(updated,'b')['adjusted'] == 56000
+
+
+def test_budget_opens_with_fresh_data_without_a_click_and_refreshes_on_reentry(monkeypatch):
+    from datetime import datetime, timedelta
+    from mori.core import default_settings, TAIPEI
+    import mori.budget_ui as ui
+    monkeypatch.setenv('DEMO_MODE','true')
+    original = ui.collect_spend
+    calls = []
+    def spy(*args):
+        calls.append(1)
+        return original(*args)
+    monkeypatch.setattr(ui,'collect_spend',spy)
+    s = default_settings()
+    s['accounts'] = [{'key':'demo_meta','name':'Meta','platform':'meta','account_id':'1','meta_action_type':'purchase'}]
+    s['project_groups'] = [{'id':'f','name':'感謝祭','start':'2026-10-01','end':'2026-11-30','status':'已結案'}]
+    s['projects'] = [{'id':'p','name':'Meta','group_id':'f','account_key':'demo_meta','budget':56000,
+                      'start':'2026-11-18','end':'2026-11-18','keyword':'示範','status':'已結案'}]
+    app = AppTest.from_file(APP,default_timeout=15)
+    app.session_state['demo_settings'] = s
+    app.run()
+    app.sidebar.radio[0].set_value('專案預算').run()
+    assert not app.exception and len(calls) == 1
+    assert app.session_state['budget_view']['results']['p']['spend'] == 1200
+    assert any(x.label == '累計花費' and x.value == '1,200.00' for x in app.metric)
+    # Fragment-only filters must not read the API on every click.
+    next(x for x in app.radio if x.label == '顯示專案').set_value('已結案').run()
+    assert not app.exception and len(calls) == 1
+    app.sidebar.radio[0].set_value('數據總覽').run()
+    app.sidebar.radio[0].set_value('專案預算').run()
+    assert not app.exception and len(calls) == 2
+    view = dict(app.session_state['budget_view'])
+    view['requested_at'] = (datetime.now(TAIPEI) - timedelta(seconds=61)).isoformat()
+    app.session_state['budget_view'] = view
+    app.run()
+    assert not app.exception and len(calls) == 3

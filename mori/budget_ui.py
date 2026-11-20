@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from mori.budgets import (collect_spend, configuration_key, plan_summary, save_group,
-                          save_plan, time_progress, group_summary)
+                          save_plan, time_progress, group_summary, refresh_due)
 from mori.core import AppError, TAIPEI
 from mori.budget_ledger import balance, impacts
 from mori.budget_ledger_ui import records, render_ledger
@@ -23,77 +23,7 @@ def render_budgets(settings, fetch, persist):
     st.caption('專案走期、各平台廣告走期分開管理；花費累計完整廣告走期，含預熱，資料截至昨天（台灣時間）。')
     overview, edit, ledger = st.tabs(['預算總覽', '新增／編輯設定', '預算調動與紀錄'])
     with overview:
-        left, right = st.columns([3, 1])
-        mode = left.radio('顯示專案', ['全部', '進行中', '已結案'], horizontal=True, key='budget_state_filter')
-        if right.button('更新完整廣告走期花費', type='primary', disabled=not bool(plans)):
-            # Each account provider owns its connection; writes/LINE are never invoked.
-            with st.spinner('依各平台完整廣告走期讀取花費…'):
-                results = collect_spend(plans, accounts, fetch, today)
-            st.session_state.budget_view = {'key': configuration_key(settings), 'results': results,
-                                            'at': datetime.now(TAIPEI).isoformat(), 'date': str(today)}
-        view = st.session_state.get('budget_view')
-        fresh = view and view['key'] == configuration_key(settings) and view['date'] == str(today)
-        results = view['results'] if fresh else {}
-        if fresh:
-            stamp = datetime.fromisoformat(view['at']).strftime('%Y/%m/%d %H:%M')
-            st.caption(f'最近更新：{stamp}（台灣時間）｜平台回補或調整後可再次更新，已結束計畫也能重查。')
-        elif plans:
-            st.info('按「更新完整廣告走期花費」載入預算進度；未查詢或讀取失敗不會顯示為零花費。')
-        money_filter = st.selectbox('預算狀況', ['全部', '已超支', '廣告結束有結餘'], key='budget_money_filter')
-        def visible(plan):
-            if money_filter == '全部':
-                return True
-            summary = plan_summary(plan, results.get(plan['id']), today, settings)
-            if summary['remaining'] is None:
-                return False
-            return summary['remaining'] < 0 if money_filter == '已超支' else (summary['budget'] > 0 and summary['remaining'] > 0 and today > date.fromisoformat(plan['end']))
-        if not groups and not plans:
-            st.info('先到「新增／編輯設定」建立專案，再分別加入 Meta、Google 投放計畫。')
-        for gid, group in groups.items():
-            if mode != '全部' and group['status'] != mode:
-                continue
-            children = [p for p in plans if p.get('group_id') == gid]
-            if money_filter != '全部' and not any(visible(p) for p in children):
-                continue
-            with st.container(border=True):
-                title, badge = st.columns([3, 1])
-                title.subheader(group['name'])
-                if group['status'] == '已結案':
-                    state = '已結案'
-                elif today < date.fromisoformat(group['start']):
-                    state = '活動尚未開始'
-                elif today > date.fromisoformat(group['end']):
-                    state = '活動走期已結束'
-                else:
-                    state = '活動走期內'
-                badge.markdown('**' + state + '**')
-                st.caption(f"專案走期　{group['start']} ～ {group['end']}")
-                elapsed = time_progress(group['start'], group['end'], today)
-                st.progress(elapsed, text=f'專案時間進度 {elapsed:.0%}（含今天，與花費分開計算）')
-                if children and all(today > date.fromisoformat(p['end']) for p in children):
-                    st.caption('各平台投放已結束，保留實際花費與結餘。')
-                if not children:
-                    st.caption('尚未加入平台投放計畫。請到設定頁加入 Meta 或 Google。')
-                if children:
-                    render_group_totals(children, results, today, settings)
-                    if money_filter != '全部':
-                        st.caption('以下保留本專案所有平台，方便比較；預算狀況篩選用來挑出專案。')
-                    ordered = sorted(children, key=lambda p: (accounts[p['account_key']]['platform'] != 'meta', p['account_key']))
-                    # One envelope and one project title. Native columns stack on mobile.
-                    for offset in range(0, len(ordered), 2):
-                        columns = st.columns(min(2, len(ordered) - offset), gap='medium')
-                        for col, plan in zip(columns, ordered[offset:offset+2]):
-                            with col:
-                                with st.container(border=True):
-                                    render_plan(plan, accounts, results.get(plan['id']), today, settings, compact=True)
-        ungrouped = [p for p in plans if not p.get('group_id') and (mode == '全部' or p['status'] == mode) and visible(p)]
-        if ungrouped:
-            st.subheader('既有平台計畫｜尚未歸入專案')
-            st.caption('既有資料及異常規則連結均保留。可在設定頁編輯此計畫，指定所屬專案。')
-            for plan in ungrouped:
-                with st.container(border=True):
-                    render_plan(plan, accounts, results.get(plan['id']), today, settings)
-        st.caption('進度＝實際花費 ÷ 調整後可用預算。金額不另加稅與服務費，不等於儲值餘額。不同專案篩選可能重疊，因此不加總為全帳號花費。走期狀態依設定日期判斷，不代表平台即時開關狀態。')
+        render_budget_overview(settings, fetch)
     with edit:
         if not accounts:
             st.info('請先到「帳號與串接」新增廣告帳號。')
@@ -220,7 +150,7 @@ def render_budgets(settings, fetch, persist):
                                                   'keyword': keyword.strip(), 'status': status,
                                                   'match_conditions': matching, 'match_mode': mode})
                     st.session_state.pending_budget_plan = next(p['id'] for p in updated['projects'] if p['id'] not in {x['id'] for x in plans}) if not plan else plan['id']
-                    persist(updated, notice='平台計畫已儲存。回到預算總覽更新完整廣告走期花費。')
+                    persist(updated, notice='平台計畫已儲存。預算總覽會自動讀取最新花費。')
                 except (AppError, ValueError) as exc:
                     st.error(str(exc))
         st.download_button('匯出設定備份（不含權杖）', json.dumps(settings, ensure_ascii=False, indent=2),
@@ -229,6 +159,90 @@ def render_budgets(settings, fetch, persist):
     with ledger:
         render_ledger(settings, fetch, persist)
 
+
+@st.fragment(run_every=60)
+def render_budget_overview(settings, fetch):
+    today = datetime.now(TAIPEI).date()
+    groups = {g['id']: g for g in settings.get('project_groups', [])}
+    accounts = {a['key']: a for a in settings['accounts']}
+    plans = settings['projects']
+    left, right = st.columns([3, 1])
+    mode = left.radio('顯示專案', ['全部', '進行中', '已結案'], horizontal=True, key='budget_state_filter')
+    manual = right.button('重新讀取', disabled=not bool(plans), help='平時自動更新；需要立刻重查時可使用。')
+    entered = st.session_state.pop('budget_refresh_requested', False)
+    view = st.session_state.get('budget_view')
+    now = datetime.now(TAIPEI)
+    if refresh_due(settings, view, now, force=manual or entered):
+        started = now.isoformat()
+        with st.spinner('自動讀取各平台完整廣告走期花費…'):
+            results = collect_spend(plans, accounts, fetch, today)
+        completed = datetime.now(TAIPEI)
+        view = {'key': configuration_key(settings), 'results': results,
+                'requested_at': started, 'at': completed.isoformat(), 'date': str(today)}
+        st.session_state.budget_view = view
+    fresh = view and view.get('key') == configuration_key(settings) and view.get('date') == str(today)
+    results = view['results'] if fresh else {}
+    if fresh:
+        stamp = datetime.fromisoformat(view['at']).astimezone(TAIPEI).strftime('%Y/%m/%d %H:%M:%S')
+        errors = sum(bool(r.get('error')) for r in results.values())
+        if errors:
+            st.warning(f'{errors} 個平台計畫更新失敗，未列為零花費；約一分鐘後自動重試。')
+        st.caption(f'自動更新開啟・資料讀取時間 {stamp}（台灣時間）・停留本頁約每分鐘更新・花費截至昨天')
+    money_filter = st.selectbox('預算狀況', ['全部', '已超支', '廣告結束有結餘'], key='budget_money_filter')
+    def visible(plan):
+        if money_filter == '全部':
+            return True
+        summary = plan_summary(plan, results.get(plan['id']), today, settings)
+        if summary['remaining'] is None:
+            return False
+        return summary['remaining'] < 0 if money_filter == '已超支' else (summary['budget'] > 0 and summary['remaining'] > 0 and today > date.fromisoformat(plan['end']))
+    if not groups and not plans:
+        st.info('先到「新增／編輯設定」建立專案，再分別加入 Meta、Google 投放計畫。')
+    for gid, group in groups.items():
+        if mode != '全部' and group['status'] != mode:
+            continue
+        children = [p for p in plans if p.get('group_id') == gid]
+        if money_filter != '全部' and not any(visible(p) for p in children):
+            continue
+        with st.container(border=True):
+            title, badge = st.columns([3, 1])
+            title.subheader(group['name'])
+            if group['status'] == '已結案':
+                state = '已結案'
+            elif today < date.fromisoformat(group['start']):
+                state = '活動尚未開始'
+            elif today > date.fromisoformat(group['end']):
+                state = '活動走期已結束'
+            else:
+                state = '活動走期內'
+            badge.markdown('**' + state + '**')
+            st.caption(f"專案走期　{group['start']} ～ {group['end']}")
+            elapsed = time_progress(group['start'], group['end'], today)
+            st.progress(elapsed, text=f'專案時間進度 {elapsed:.0%}（含今天，與花費分開計算）')
+            if children and all(today > date.fromisoformat(p['end']) for p in children):
+                st.caption('各平台投放已結束，保留實際花費與結餘。')
+            if not children:
+                st.caption('尚未加入平台投放計畫。請到設定頁加入 Meta 或 Google。')
+            if children:
+                render_group_totals(children, results, today, settings)
+                if money_filter != '全部':
+                    st.caption('以下保留本專案所有平台，方便比較；預算狀況篩選用來挑出專案。')
+                ordered = sorted(children, key=lambda p: (accounts[p['account_key']]['platform'] != 'meta', p['account_key']))
+                # One envelope and one project title. Native columns stack on mobile.
+                for offset in range(0, len(ordered), 2):
+                    columns = st.columns(min(2, len(ordered) - offset), gap='medium')
+                    for col, plan in zip(columns, ordered[offset:offset+2]):
+                        with col:
+                            with st.container(border=True):
+                                render_plan(plan, accounts, results.get(plan['id']), today, settings, compact=True)
+    ungrouped = [p for p in plans if not p.get('group_id') and (mode == '全部' or p['status'] == mode) and visible(p)]
+    if ungrouped:
+        st.subheader('既有平台計畫｜尚未歸入專案')
+        st.caption('既有資料及異常規則連結均保留。可在設定頁編輯此計畫，指定所屬專案。')
+        for plan in ungrouped:
+            with st.container(border=True):
+                render_plan(plan, accounts, results.get(plan['id']), today, settings)
+    st.caption('進度＝實際花費 ÷ 調整後可用預算。金額不另加稅與服務費，不等於儲值餘額。不同專案篩選可能重疊，因此不加總為全帳號花費。走期狀態依設定日期判斷，不代表平台即時開關狀態。')
 
 def render_group_totals(plans, results, today, settings):
     data = group_summary(plans, results, today, settings)

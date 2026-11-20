@@ -5,7 +5,7 @@ import copy
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from mori.core import AppError
 
@@ -46,6 +46,20 @@ def plan_summary(plan, result, today, settings=None):
             'currency': result.get('currency') if known else None}
 
 
+def refresh_due(settings, view, now, force=False, ttl=60):
+    """Per-session freshness; settings/date changes and every page entry force reads."""
+    if not settings['projects']:
+        return False
+    if force or not view or view.get('key') != configuration_key(settings) or view.get('date') != str(now.date()):
+        return True
+    try:
+        requested = datetime.fromisoformat(view.get('requested_at') or view['at'])
+        age = (now - requested).total_seconds()
+        return age < 0 or age >= ttl
+    except (ValueError, TypeError, KeyError):
+        return True
+
+
 def group_summary(plans, results, today, settings):
     """Combine a project's platform envelopes only when currency/cost are known."""
     from mori.budget_ledger import balance, impacts
@@ -68,13 +82,12 @@ def group_summary(plans, results, today, settings):
 
 def collect_spend(plans, accounts, fetch, today):
     """A failed read remains unknown, never zero. Each plan uses its whole ad window."""
-    def one(plan):
+    def one(plan, report):
         window = spend_window(plan, today)
         if not window:
             return {'not_started': True, 'spend': 0., 'currency': None,
                     'since': None, 'until': None, 'rows': []}
         start, end = window
-        report = fetch(accounts[plan['account_key']], start, end)
         from mori.project_matching import matches, conditions
         rules = conditions(plan)
         if accounts[plan['account_key']].get('platform') == 'google' and any(c['field'] != 'campaign_name' for c in rules) and not report.get('attribution_detail'):
@@ -103,11 +116,21 @@ def collect_spend(plans, accounts, fetch, today):
         return {'spend': spend, 'currency': report['currency'], 'since': str(start), 'until': str(end),
                 'rows': rows, 'timezone': report.get('timezone'), 'warnings': warnings}
     results = {}
+    # Several projects often share the same account/window. Fetch once, then
+    # apply each plan's attribution independently; never share across accounts.
     with ThreadPoolExecutor(max_workers=min(4, max(1, len(plans)))) as pool:
-        jobs = [(plan, pool.submit(one, plan)) for plan in plans]
-        for plan, job in jobs:
+        jobs = {}
+        windows = {}
+        for plan in plans:
+            window = spend_window(plan, today)
+            key = (plan['account_key'], *window) if window else None
+            windows[plan['id']] = key
+            if key is not None and key not in jobs:
+                jobs[key] = pool.submit(fetch, accounts[plan['account_key']], *window)
+        for plan in plans:
             try:
-                results[plan['id']] = job.result()
+                key = windows[plan['id']]
+                results[plan['id']] = one(plan, jobs[key].result() if key is not None else None)
             except AppError as exc:
                 results[plan['id']] = {'error': str(exc)}
     owners = {}

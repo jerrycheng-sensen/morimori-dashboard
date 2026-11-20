@@ -82,8 +82,14 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.20.23")
+st.sidebar.caption("系統版本：2026.11.20.24")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
+# Only navigation into the budget page forces a new read. Widget/form reruns
+# use the current snapshot; the overview fragment handles timed refreshes.
+if st.session_state.get('last_navigation_page') != page:
+    if page == '專案預算':
+        st.session_state.budget_refresh_requested = True
+    st.session_state.last_navigation_page = page
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 with st.sidebar.expander("品牌外觀"):
     logo = st.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
@@ -109,6 +115,8 @@ else:
         store = st.session_state.ui_store
         if st.sidebar.button("重新載入設定", help="立即讀取其他視窗的設定變更；一般操作使用此瀏覽連線的短期快取。"):
             store.clear()
+            if page == '專案預算':
+                st.session_state.budget_refresh_requested = True
         settings, settings_sha = store.settings()
         settings = validate_settings(settings)
     except (AppError, ValueError) as exc:

@@ -217,3 +217,24 @@ unknown data, mixed currencies or unset budgets do not produce misleading totals
 Money filters pick projects while retaining all their platform cards for comparison.
 Validation: 84 tests, including project totals, missing/mixed currency cases and
 existing save/transfer UI flows.
+
+### Automatic project budget reads (2026.11.20.24)
+
+Opening the budget page now forces a fresh read for that browser session. A
+60-second Streamlit overview fragment checks/refreshes while the page is open;
+filters use the current snapshot instead of making a request on every interaction.
+Settings changes and Taipei day rollover invalidate the snapshot. Refresh cadence
+is measured from request start, so API duration does not add an extra idle minute.
+The overview fragment updates independently of the project/ledger editing forms.
+The optional secondary button is now labelled 重新讀取; no initial click is needed.
+
+Requests sharing an account and date window are deduplicated within each refresh,
+then each plan's attribution conditions are applied independently. Failed reads
+remain unknown and are retried on the next timed refresh. Polling does not write
+settings, create budget transactions or send LINE. Spending still covers each
+plan's complete ad window through yesterday; this is not today's live spend.
+
+Validation: 87 tests, including opening without clicking refresh, reentry,
+filtering without repeated reads, refresh expiry, settings/date invalidation,
+request deduplication and existing financial/attribution/UI flows. Browser timer
+scheduling and live API latency still require observing the deployed app.
