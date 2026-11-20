@@ -85,3 +85,27 @@ def test_duplicate_budget_account_and_linked_rule_account_change_rejected():
         save_plan(s, {**s['projects'][0], 'account_key': 'g'})
     old = default_settings()
     assert validate_settings(old) == old  # no forced rewrite of legacy settings
+
+
+def test_project_rollup_uses_adjusted_allocations_and_never_totals_missing_or_mixed_currency():
+    from mori.budgets import group_summary
+    s = sample()
+    s['projects'][0]['budget'] = 56000
+    s['projects'][1]['budget'] = 144000
+    s['budget_transactions'] = [{'id':'tx', 'kind':'transfer', 'source_id':'external',
+        'target_id':'meta', 'amount':36386, 'effective_on':'2026-10-01'}]
+    today = date(2026,11,20)
+    results = {'meta':{'spend':92168,'currency':'TWD'},
+               'google':{'spend':143479.53,'currency':'TWD'}}
+    value = group_summary(s['projects'], results, today, s)
+    assert value['budget'] == 236386
+    assert value['spend'] == pytest.approx(235647.53)
+    assert value['remaining'] == pytest.approx(738.47)
+    assert value['ratio'] == pytest.approx(235647.53/236386)
+    failed = group_summary(s['projects'], {**results,'google':{'error':'offline'}}, today, s)
+    assert failed['spend'] is None and failed['budget'] is None and failed['remaining'] is None
+    mixed = group_summary(s['projects'], {**results,'google':{'spend':100,'currency':'USD'}}, today, s)
+    assert mixed['spend'] is None and '不同幣別' in mixed['reason']
+    s['projects'][1]['budget'] = 0
+    unset = group_summary(s['projects'], results, today, s)
+    assert unset['spend'] == pytest.approx(235647.53) and unset['budget'] is None and unset['ratio'] is None

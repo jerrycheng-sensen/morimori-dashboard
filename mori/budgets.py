@@ -46,6 +46,26 @@ def plan_summary(plan, result, today, settings=None):
             'currency': result.get('currency') if known else None}
 
 
+def group_summary(plans, results, today, settings):
+    """Combine a project's platform envelopes only when currency/cost are known."""
+    from mori.budget_ledger import balance, impacts
+    summaries = [plan_summary(p, results.get(p['id']), today, settings) for p in plans]
+    currencies = {d['currency'] for d in summaries if d['currency']}
+    known = bool(summaries) and all(d['spend'] is not None and d['currency'] for d in summaries)
+    same_currency = known and len(currencies) == 1
+    initialized = all(balance(settings, p['id'], today)['original'] > 0 or
+                      any(p['id'] in impacts(t) for t in settings.get('budget_transactions', [])) for p in plans)
+    spend = sum(d['spend'] for d in summaries) if same_currency else None
+    budget = sum(d['budget'] for d in summaries) if same_currency and initialized else None
+    return {'budget': budget, 'spend': spend,
+            'remaining': budget - spend if budget is not None else None,
+            'ratio': spend / budget if budget is not None and budget > 0 else None,
+            'currency': next(iter(currencies)) if same_currency else None,
+            'reason': '不同幣別分開呈現，不加總為專案金額。' if len(currencies) > 1 else
+                      '待所有平台花費與幣別讀取成功後，顯示專案合計。' if not known else
+                      '部分平台預算尚未設定，暫不計算總預算與整體進度。' if not initialized else ''}
+
+
 def collect_spend(plans, accounts, fetch, today):
     """A failed read remains unknown, never zero. Each plan uses its whole ad window."""
     def one(plan):

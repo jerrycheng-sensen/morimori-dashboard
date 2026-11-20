@@ -202,3 +202,18 @@ Validation: 83 tests, including mixed SEARCH/PMax cost reconciliation, multi-ass
 no-double-counting, multiple format normalization, unavailable-copy warnings,
 asset-group identity overlap checks and preview/save UI. Live account API requests
 remain to be verified in the deployed app.
+
+
+### Unified project budget layout (2026.11.20.23)
+
+A project has one outer card/title and a shared summary, with Meta and Google Ads
+shown side by side (stacked on small screens). Platform headings contain only the
+platform name. Original plan names, attribution notes and transfer details remain
+available in expanders; existing saved names, IDs and ledger entries are untouched.
+New platform plan names can be blank and default to the platform name. The editor
+explains the difference between the project's name and the optional plan identifier.
+Project totals use adjusted allocations and only sum known costs in one currency;
+unknown data, mixed currencies or unset budgets do not produce misleading totals.
+Money filters pick projects while retaining all their platform cards for comparison.
+Validation: 84 tests, including project totals, missing/mixed currency cases and
+existing save/transfer UI flows.
