@@ -278,3 +278,16 @@ or permission failure. No raw platform error message or credential is displayed.
 Validation: 91 tests, including no timer-based reads, navigation/manual refresh,
 independent date/ad lifecycle states and sanitized rate-limit error handling.
 Live deployment and Meta quota recovery have not been independently observed.
+
+### Budget page visual hierarchy (2026.11.20.27)
+
+The budget page now has a branded dark-green hero with a 48px page heading.
+Each project has a separate dark-green title band with a 34px white project name,
+a lime edge and independent period/ad state badges. Platform comparison columns
+remain unchanged. The three navigation tabs retain native accessible tab behavior
+but are rendered as full-width button-style controls with borders, 58px targets,
+18px labels, selected-state fill and visible hover/keyboard focus states.
+Small screens use stacked controls and adjusted heading sizes. No auto polling,
+budget values, attribution settings or ledger records were changed.
+Validation: all 91 existing financial, provider and UI tests pass. Visual changes
+require the deployed page to load version .27 before they are visible.

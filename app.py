@@ -21,7 +21,7 @@ from mori.providers import GoogleProvider, provider_for
 from mori.runner import check_rules, conversion_label
 from mori.storage import GitHubStore
 from mori.ui_performance import UIStore, fetch_accounts
-from mori.budget_ui import render_budgets
+from mori.budget_ui import render_budgets, render_budget_heading
 from mori.dashboard import CSS as DASHBOARD_CSS, render_report as render_overview
 from mori.vault import resolve_credentials
 from mori.connection_ui import connection_panel
@@ -82,7 +82,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.20.26")
+st.sidebar.caption("系統版本：2026.11.20.27")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 # First budget visit loads data. Navigation and filter changes reuse this
 # session snapshot; only the manual button requests another read.
@@ -95,8 +95,11 @@ with st.sidebar.expander("品牌外觀"):
     logo = st.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
     if logo:
         st.image(logo, width=180)
-st.title(page)
-st.caption("掌握廣告花費、訂位成效與專案進度" if page == "數據總覽" else "廣告數據、預算與 LINE 異常提醒集中管理")
+if page == '專案預算':
+    render_budget_heading()
+else:
+    st.title(page)
+    st.caption("掌握廣告花費、訂位成效與專案進度" if page == "數據總覽" else "廣告數據、預算與 LINE 異常提醒集中管理")
 if st.session_state.get("save_notice"):
     st.success(st.session_state.pop("save_notice"))
 

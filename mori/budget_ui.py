@@ -17,8 +17,9 @@ from mori.budget_ledger_ui import records, render_ledger
 
 
 BUDGET_STYLES = """<style>
-.mori-project-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin:6px 0 10px;}
-.mori-project-heading .project-name{font-size:30px!important;margin:0;line-height:1.4;font-weight:800;color:#17421E;letter-spacing:.015em;overflow-wrap:anywhere;}
+.mori-project-heading{display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap;margin:0 0 18px;padding:22px 24px;border-radius:13px;border-left:6px solid #b8e572;background:linear-gradient(115deg,#17421E,#0d2914);box-shadow:0 6px 18px #17421e16;}
+.mori-project-heading .project-name{font-size:34px!important;margin:0;line-height:1.3;font-weight:800;color:#fff!important;letter-spacing:.015em;overflow-wrap:anywhere;}
+.mori-project-kicker{font-size:13px;color:#c6ddbd;font-weight:600;letter-spacing:.1em;margin-bottom:5px;}
 .mori-status-pair{display:flex;gap:10px;flex-wrap:wrap;}
 .mori-status{display:inline-flex;align-items:center;gap:8px;border-radius:9px;padding:8px 13px;font-size:15px!important;font-weight:700;line-height:1.4;border:1px solid;white-space:nowrap;}
 .mori-status.preparing{background:#fff4da;color:#875600;border-color:#e6c978;}
@@ -29,8 +30,34 @@ BUDGET_STYLES = """<style>
 .mori-platform-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:4px 0 8px;}
 .mori-platform-heading>span:first-child{font-size:23px!important;font-weight:750;color:#17421E;}
 .mori-ad-dates{font-size:15px!important;color:#536958;line-height:1.7;margin-bottom:14px;}
-@media(max-width:700px){.mori-project-heading .project-name{font-size:25px!important;}.mori-status{font-size:14px!important;padding:6px 10px;}}
+@media(max-width:700px){.mori-project-heading{padding:18px;}.mori-project-heading .project-name{font-size:28px!important;}.mori-status{font-size:14px!important;padding:6px 10px;}}
+
+.mori-budget-hero{position:relative;overflow:hidden;border-radius:20px;padding:30px 34px;margin:0 0 22px;background:radial-gradient(ellipse at 95% 0,#629b4566,transparent 53%),linear-gradient(115deg,#17421E,#0a2411);border:1px solid #36613b;box-shadow:0 12px 32px #17421e1a;}
+.mori-budget-hero-inner{display:flex;align-items:center;gap:22px;position:relative;}
+.mori-budget-symbol{flex-shrink:0;width:76px;height:76px;border-radius:18px;background:#d1f2a51a;border:1px solid #c8e8a753;display:flex;align-items:center;justify-content:center;color:#d8f3b5;font-size:25px;font-weight:800;}
+.mori-budget-hero .hero-category{color:#c3deb5;font-size:14px;font-weight:700;letter-spacing:.12em;margin-bottom:7px;}
+.mori-budget-hero h1{font-size:48px!important;font-weight:850!important;line-height:1.16!important;letter-spacing:.025em!important;margin:0!important;padding:0!important;color:white!important;}
+.mori-budget-hero p{font-size:17px!important;line-height:1.6;color:#d3e1d2;margin:12px 0 0;}
+.stTabs [data-baseweb="tab-list"]{display:flex;gap:10px;padding:8px;background:#e5eee6;border:1px solid #cbdccc;border-radius:14px;overflow:visible;height:auto;}
+.stTabs [data-baseweb="tab"]{flex:1;min-width:0;min-height:58px;height:auto;padding:14px 18px!important;border:1px solid #b9cebb!important;border-radius:10px!important;background:#fff!important;color:#244d2a!important;box-shadow:0 2px 5px #17421e08;font-size:18px!important;font-weight:700!important;white-space:normal;transition:background-color 120ms,border-color 120ms,box-shadow 120ms;}
+.stTabs [data-baseweb="tab"] p{font-size:18px!important;font-weight:700!important;color:inherit!important;}
+.stTabs [data-baseweb="tab"]:hover{background:#f1f7ec!important;border-color:#527d53!important;box-shadow:0 4px 10px #17421e12;}
+.stTabs [data-baseweb="tab"][aria-selected="true"]{background:#17421E!important;border-color:#17421E!important;color:#fff!important;box-shadow:0 4px 12px #17421e30;}
+.stTabs [data-baseweb="tab"]:focus-visible{outline:3px solid #93bd64;outline-offset:3px;}
+.stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none;}
+.stTabs [role="tabpanel"]{padding-top:22px!important;}
+@media(max-width:700px){.mori-budget-hero{padding:24px 20px;}.mori-budget-hero-inner{gap:14px;}.mori-budget-symbol{width:56px;height:56px;font-size:20px;}.mori-budget-hero h1{font-size:36px!important;}.mori-budget-hero p{font-size:15px!important;}.stTabs [data-baseweb="tab-list"]{display:grid;grid-template-columns:1fr;gap:7px;}.stTabs [data-baseweb="tab"]{width:100%;min-height:48px;padding:11px!important;}.stTabs [data-baseweb="tab"] p{font-size:16px!important;}}
+@media(prefers-reduced-motion:reduce){.stTabs [data-baseweb="tab"]{transition:none;}}
 </style>"""
+
+
+def render_budget_heading():
+    st.markdown(BUDGET_STYLES, unsafe_allow_html=True)
+    st.markdown('<header class="mori-budget-hero"><div class="mori-budget-hero-inner">'
+                '<div class="mori-budget-symbol" aria-hidden="true">NT$</div><div>'
+                '<div class="hero-category">廣告智慧儀表板・專案管理</div>'
+                '<h1>專案預算</h1><p>掌握每個專案的預算、花費與結餘</p>'
+                '</div></div></header>', unsafe_allow_html=True)
 
 
 def status_badge(scope, state):
@@ -39,7 +66,7 @@ def status_badge(scope, state):
 
 
 def project_header(name, phase, ads_phase):
-    return (f'<div class="mori-project-heading"><h2 class="project-name">{html.escape(name)}</h2>'
+    return (f'<div class="mori-project-heading"><div><div class="mori-project-kicker">廣告專案</div><h2 class="project-name">{html.escape(name)}</h2></div>'
             f'<div class="mori-status-pair">{status_badge("檔期", phase)}{status_badge("廣告", ads_phase)}</div></div>')
 
 
