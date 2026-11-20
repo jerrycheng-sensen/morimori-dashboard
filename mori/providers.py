@@ -180,45 +180,71 @@ class GoogleProvider:
                 "account_name": info.get("descriptiveName", account["name"]), "conversion_ready": conversion_ready(account)}
 
     def fetch_budget(self, account, start, end):
-        """Cost-only attribution: search at ad/day, other channels at campaign/day."""
+        """Non-PMax ad/day and PMax asset-group/day cost, joined to current copy."""
+        from mori.google_creatives import normalize, query_fields, reconcile
         start, end = check_dates(start, end)
-        # Reuse currency/timezone metadata; do not mix campaign totals with search ads.
         report = self.fetch(account, start, end)
-        rows = [r for r in report['rows'] if r['channel'] != 'SEARCH']
-        query = ("SELECT campaign.id, campaign.name, campaign.advertising_channel_type, "
-                 "ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad.type, "
-                 "ad_group_ad.ad.responsive_search_ad.headlines, "
-                 "ad_group_ad.ad.responsive_search_ad.descriptions, "
-                 "ad_group_ad.ad.responsive_search_ad.path1, ad_group_ad.ad.responsive_search_ad.path2, "
-                 "segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks "
-                 "FROM ad_group_ad WHERE campaign.advertising_channel_type = 'SEARCH' "
-                 f"AND segments.date BETWEEN '{start}' AND '{end}'")
-        for item in self.query(account, query):
-            campaign, group = item['campaign'], item.get('adGroup', {})
-            ad = item.get('adGroupAd', {}).get('ad', {})
-            rsa, metrics = ad.get('responsiveSearchAd', {}), item.get('metrics', {})
-            rows.append({'account_key': account['key'], 'platform': 'google',
-                         'date': item['segments']['date'], 'campaign_id': str(campaign['id']),
-                         'campaign_name': campaign.get('name', ''), 'channel': 'SEARCH',
-                         'adset_id': str(group.get('id', '')), 'adset_name': group.get('name', ''),
-                         'ad_id': str(ad['id']), 'ad_name': 'ID ' + str(ad['id']),
-                         'headlines': [x.get('text', '') for x in rsa.get('headlines', [])],
-                         'descriptions': [x.get('text', '') for x in rsa.get('descriptions', [])],
-                         'paths': [rsa.get('path1', ''), rsa.get('path2', '')],
-                         'currency': report['currency'], 'spend': number(metrics.get('costMicros')) / 1_000_000,
-                         'impressions': number(metrics.get('impressions')), 'clicks': number(metrics.get('clicks')),
-                         'conversions': None, 'conversion_value': None})
-        campaign_costs, ad_costs = {}, {}
-        for row in report['rows']:
-            if row['channel'] == 'SEARCH':
-                key = (row['campaign_id'], row['date'])
-                campaign_costs[key] = campaign_costs.get(key, 0.) + row['spend']
-        for row in rows:
-            if row['channel'] == 'SEARCH':
-                key = (row['campaign_id'], row['date'])
-                ad_costs[key] = ad_costs.get(key, 0.) + row['spend']
-        if any(abs(campaign_costs.get(k, 0.) - ad_costs.get(k, 0.)) > .00001 for k in campaign_costs.keys() | ad_costs.keys()):
-            raise AppError('Google 搜尋廣告明細與活動花費未對上；已停止認列，請重新更新或核對平台報表。')
+        campaign_rows = report['rows']
+        rows = []
+        where = f"segments.date BETWEEN '{start}' AND '{end}'"
+        common = ['campaign.id', 'campaign.name', 'campaign.advertising_channel_type',
+                  'segments.date', 'metrics.cost_micros', 'metrics.impressions', 'metrics.clicks']
+
+        def cost_row(item):
+            campaign, metrics = item['campaign'], item.get('metrics', {})
+            return {'account_key': account['key'], 'platform': 'google',
+                    'date': item['segments']['date'], 'campaign_id': str(campaign['id']),
+                    'campaign_name': campaign.get('name', ''),
+                    'channel': campaign.get('advertisingChannelType', 'UNKNOWN'),
+                    'currency': report['currency'], 'spend': number(metrics.get('costMicros')) / 1_000_000,
+                    'impressions': number(metrics.get('impressions')), 'clicks': number(metrics.get('clicks')),
+                    'conversions': None, 'conversion_value': None}
+
+        if any(r['channel'] != 'PERFORMANCE_MAX' for r in campaign_rows):
+            fields = common + ['ad_group.id', 'ad_group.name', 'ad_group_ad.ad.id', 'ad_group_ad.ad.type'] + query_fields()
+            query = ('SELECT ' + ', '.join(fields) + ' FROM ad_group_ad WHERE ' + where +
+                     " AND campaign.advertising_channel_type != 'PERFORMANCE_MAX'")
+            for item in self.query(account, query):
+                group, ad = item.get('adGroup', {}), item['adGroupAd']['ad']
+                rows.append({**cost_row(item), **normalize(ad),
+                             'adset_id': str(group.get('id', '')), 'adset_name': group.get('name', ''),
+                             'ad_id': str(ad['id']), 'ad_name': 'ID ' + str(ad['id']),
+                             'ad_type': ad.get('type', 'UNKNOWN'), 'attribution_unit': '廣告',
+                             'asset_group_id': '', 'asset_group_name': ''})
+
+        if any(r['channel'] == 'PERFORMANCE_MAX' for r in campaign_rows):
+            # Read text independently of metrics. Multiple matching assets must never
+            # multiply the daily cost of an asset group.
+            assets = self.query(account,
+                "SELECT asset_group.id, asset_group_asset.field_type, asset.text_asset.text "
+                "FROM asset_group_asset WHERE campaign.advertising_channel_type = 'PERFORMANCE_MAX' "
+                "AND asset_group_asset.status != 'REMOVED' "
+                "AND asset_group_asset.field_type IN ('HEADLINE', 'LONG_HEADLINE', 'DESCRIPTION', 'LONG_DESCRIPTION')")
+            copy = {}
+            for item in assets:
+                group_id = str(item['assetGroup']['id'])
+                text = item.get('asset', {}).get('textAsset', {}).get('text')
+                if not text:
+                    continue
+                role = item['assetGroupAsset'].get('fieldType')
+                key = 'headlines' if role in ('HEADLINE', 'LONG_HEADLINE') else 'descriptions'
+                copy.setdefault(group_id, {'headlines': [], 'descriptions': []})[key].append(text)
+            fields = common + ['asset_group.id', 'asset_group.name', 'asset_group.path1', 'asset_group.path2']
+            query = ('SELECT ' + ', '.join(fields) + ' FROM asset_group WHERE ' + where +
+                     " AND campaign.advertising_channel_type = 'PERFORMANCE_MAX'")
+            for item in self.query(account, query):
+                group = item['assetGroup']
+                group_id = str(group['id'])
+                texts = copy.get(group_id, {'headlines': [], 'descriptions': []})
+                rows.append({**cost_row(item),
+                             'adset_id': '', 'adset_name': '', 'ad_id': '', 'ad_name': '',
+                             'asset_group_id': group_id, 'asset_group_name': group.get('name', ''),
+                             'ad_type': 'PERFORMANCE_MAX', 'attribution_unit': '素材群組',
+                             'headlines': sorted(set(texts['headlines'])),
+                             'descriptions': sorted(set(texts['descriptions'])),
+                             'paths': [p for p in [group.get('path1'), group.get('path2')] if p],
+                             'available_fields': ['headlines', 'descriptions', 'paths']})
+        reconcile(campaign_rows, rows)
         report['rows'] = rows
         report['attribution_detail'] = True
         return report

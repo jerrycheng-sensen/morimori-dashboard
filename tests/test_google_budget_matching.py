@@ -26,15 +26,26 @@ def test_literal_asset_matching_or_city_and_id():
             validate_matching(plan(match_conditions=rules), 'google')
 
 
-def test_google_budget_query_replaces_search_campaign_cost_without_duplicate_assets():
+def test_google_budget_query_replaces_campaign_cost_without_duplicate_assets():
     provider = GoogleProvider({'GOOGLE_CLIENT_ID': 'c', 'GOOGLE_CLIENT_SECRET': 's', 'GOOGLE_REFRESH_TOKEN': 'r'})
     provider.fetch = lambda *_: {'currency': 'TWD', 'timezone': 'Asia/Taipei', 'rows': [
-        {'channel': 'SEARCH', 'campaign_id': '10', 'date': '2026-11-01', 'spend': 123.456789}, {'channel': 'PERFORMANCE_MAX', 'spend': 55}]}
+        {'channel': 'SEARCH', 'campaign_id': '10', 'date': '2026-11-01', 'spend': 123.456789},
+        {'channel': 'PERFORMANCE_MAX', 'campaign_id': '11', 'date': '2026-11-01', 'spend': 55}]}
     queries = []
     def query(account, sql):
         queries.append(sql)
-        return [{'campaign': {'id': '10', 'name': '品牌'}, 'adGroup': {'id': '20', 'name': '高意圖'},
-                 'adGroupAd': {'ad': {'id': '30', 'responsiveSearchAd': {
+        if 'FROM asset_group_asset' in sql:
+            assert 'metrics.cost_micros' not in sql
+            return [{'assetGroup': {'id': '40'}, 'assetGroupAsset': {'fieldType': role},
+                     'asset': {'textAsset': {'text': text}}} for role, text in [
+                         ('HEADLINE', '感謝祭'), ('LONG_HEADLINE', '感謝祭長標題'), ('DESCRIPTION', '訂位')]]
+        if 'FROM asset_group ' in sql:
+            return [{'campaign': {'id': '11', 'name': '品牌 PMax', 'advertisingChannelType': 'PERFORMANCE_MAX'},
+                     'assetGroup': {'id': '40', 'name': '感謝祭全店', 'path1': '感謝祭'},
+                     'segments': {'date': '2026-11-01'}, 'metrics': {'costMicros': '55000000'}}]
+        return [{'campaign': {'id': '10', 'name': '品牌', 'advertisingChannelType': 'SEARCH'},
+                 'adGroup': {'id': '20', 'name': '高意圖'},
+                 'adGroupAd': {'ad': {'id': '30', 'type': 'RESPONSIVE_SEARCH_AD', 'responsiveSearchAd': {
                      'headlines': [{'text': '感謝祭'}, {'text': '感謝祭加碼'}],
                      'descriptions': [{'text': '訂位'}], 'path1': '感謝祭'}}},
                  'segments': {'date': '2026-11-01'}, 'metrics': {'costMicros': '123456789'}}]
@@ -43,8 +54,13 @@ def test_google_budget_query_replaces_search_campaign_cost_without_duplicate_ass
     assert result['attribution_detail']
     assert len(result['rows']) == 2
     assert sum(r['spend'] for r in result['rows']) == pytest.approx(178.456789)
-    assert result['rows'][1]['ad_id'] == '30'
+    assert result['rows'][0]['ad_id'] == '30'
+    assert result['rows'][1]['asset_group_id'] == '40' and result['rows'][1]['ad_id'] == ''
+    assert result['rows'][1]['headlines'] == ['感謝祭', '感謝祭長標題']
     assert 'FROM ad_group_ad' in queries[0] and 'segments.conversion_action' not in queries[0]
+    output = collect_spend([plan()], {'g': {'platform': 'google'}}, lambda *_: result, date(2026,11,20))['g1']
+    assert output['spend'] == pytest.approx(178.456789)
+    assert any('素材群組整筆花費' in w for w in output['warnings'])
 
 
 def test_budget_match_once_conflicts_block_and_missing_detail_is_unknown():
@@ -91,3 +107,46 @@ render_budgets(s, fetch, persist)
     assert not app.exception and not app.error
     saved = app.session_state['saved']['projects'][0]
     assert saved['match_conditions'] == [{'field':'headlines','text':'感謝祭'}]
+
+
+@pytest.mark.parametrize('ad,heads,descs,paths', [
+    ({'responsiveDisplayAd': {'headlines':[{'text':'短標'}], 'longHeadline':{'text':'長標'}, 'descriptions':[{'text':'說明'}]}}, ['短標','長標'], ['說明'], []),
+    ({'demandGenVideoResponsiveAd': {'headlines':[{'text':'短標'}], 'longHeadlines':[{'text':'長標'}], 'descriptions':[{'text':'說明'}], 'breadcrumb1':'路徑'}}, ['短標','長標'], ['說明'], ['路徑']),
+    ({'videoAd': {'inFeed': {'headline':'影音標題', 'description1':'說明一', 'description2':'說明二'}}}, ['影音標題'], ['說明一','說明二'], []),
+    ({'expandedTextAd': {'headlinePart1':'標題', 'description':'說明', 'path1':'活動'}}, ['標題'], ['說明'], ['活動']),
+    ({'demandGenProductAd': {'headline':{'text':'商品'}, 'description':{'text':'說明'}, 'breadcrumb1':'活動'}}, ['商品'], ['說明'], ['活動']),
+    ({'imageAd': {'name':'不可猜成標題'}}, [], [], []),
+])
+def test_format_adapters_normalize_only_official_copy_fields(ad, heads, descs, paths):
+    from mori.google_creatives import normalize
+    result = normalize(ad)
+    assert result['headlines'] == heads and result['descriptions'] == descs and result['paths'] == paths
+    if 'imageAd' in ad:
+        assert result['available_fields'] == []
+
+
+def test_asset_group_identity_prevents_false_conflicts_but_shared_group_blocks():
+    rows = [{'date':'2026-11-01','campaign_id':'1','channel':'PERFORMANCE_MAX',
+             'asset_group_id':str(i), 'asset_group_name':name, 'headlines':[name],
+             'currency':'TWD','spend':cost, 'available_fields':['headlines','descriptions','paths']}
+            for i,name,cost in [(1,'感謝祭',50), (2,'新店開幕',70)]]
+    accounts = {'g':{'platform':'google'}}
+    fetch = lambda *_: {'currency':'TWD','attribution_detail':True,'rows':rows}
+    p1, p2 = plan(), plan(id='g2',match_conditions=[{'field':'asset_group_id','text':'2'}])
+    output = collect_spend([p1,p2],accounts,fetch,date(2026,11,20))
+    assert output['g1']['spend'] == 50 and output['g2']['spend'] == 70
+    p2['match_conditions'] = [{'field':'asset_group_id','text':'1'}]
+    output = collect_spend([p1,p2],accounts,fetch,date(2026,11,20))
+    assert all('error' in r for r in output.values())
+    validate_matching(p2,'google')
+
+
+def test_unavailable_copy_warns_instead_of_silently_losing_cost_and_reconciliation_blocks():
+    from mori.google_creatives import reconcile
+    rows = [{'date':'2026-11-01','campaign_id':'1','channel':'DISPLAY','ad_type':'IMAGE_AD',
+             'ad_id':'10','spend':120,'currency':'TWD','available_fields':[]}]
+    fetch = lambda *_: {'rows':rows,'attribution_detail':True,'currency':'TWD'}
+    result = collect_spend([plan()],{'g':{'platform':'google'}},fetch,date(2026,11,20))['g1']
+    assert result['spend'] == 0 and any('120.00' in w and 'IMAGE_AD' in w for w in result['warnings'])
+    with pytest.raises(AppError, match='未對上'):
+        reconcile(rows, [{**rows[0],'spend':100}])

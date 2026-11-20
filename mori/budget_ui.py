@@ -148,7 +148,7 @@ def render_budgets(settings, fetch, persist):
             from mori.project_matching import FIELDS, conditions
             if google_plan:
                 st.markdown('**Google 廣告認列條件**')
-                st.caption('Google 層級：廣告活動 → 廣告群組 → 廣告。標題、說明與路徑是廣告內容。')
+                st.caption('一般 Google 廣告：廣告活動 → 廣告群組 → 廣告；PMax：廣告活動 → 素材群組。標題、說明、路徑依各格式提供的內容比對。')
                 st.caption('廣告 ID 是 API 回傳的數字編號；選擇廣告條件時，須填完整 ID 並完全相符。可先用文案預覽，在明細查看 ID；不必先找 ID 才能設定。')
                 st.caption('只計入上述廣告走期；同一廣告符合多個條件只算一次。廣告以 ID 辨識，不需要廣告名稱。')
                 mode = st.selectbox('條件組合', ['all', 'any'], index=int(plan.get('match_mode', 'all') == 'any'),
@@ -166,7 +166,7 @@ def render_budgets(settings, fetch, persist):
                                               placeholder='例如：感謝祭；多個文字擇一可填 桃園|新竹', key=f'budget_text_{plan_id}_{i}')
                     if text_i.strip():
                         matching.append({'field': field_i, 'text': text_i.strip()})
-                st.caption('空白條件不使用。PMax 請以廣告活動條件認列；搜尋廣告文案條件不涵蓋 PMax。')
+                st.caption('空白條件不使用。標題含短標題與長標題；未提供的欄位不會虛構。PMax 命中素材群組文案時，認列的是該素材群組整筆花費，請勿將不同專案素材混放同一群組。')
                 st.caption('文案依 API 目前設定比對，無法還原歷史文案；若曾改稿，請核對廣告 ID 與走期。')
                 field, keyword = (matching[0]['field'], matching[0]['text']) if matching else ('campaign_name', '')
             else:
@@ -262,9 +262,9 @@ def render_plan(plan, accounts, result, today, settings):
             rows = result['rows']
             if rows:
                 df = pd.DataFrame(rows)
-                columns = [k for k in ['date', 'channel', 'campaign_name', 'adset_name', 'ad_id', 'ad_name', 'headlines', 'descriptions', 'paths', 'spend', 'currency'] if k in df]
-                st.dataframe(df[columns].rename(columns={'date': '日期', 'campaign_name': '活動', 'adset_name': '廣告組合',
-                                                        'ad_name': '廣告', 'channel': '類型', 'ad_id': '廣告 ID', 'headlines': '目前標題', 'descriptions': '目前說明', 'paths': '目前路徑', 'spend': '花費', 'currency': '幣別'}), hide_index=True, width='stretch')
+                columns = [k for k in ['date', 'channel', 'ad_type', 'attribution_unit', 'campaign_name', 'adset_name', 'ad_id', 'ad_name', 'asset_group_name', 'asset_group_id', 'headlines', 'descriptions', 'paths', 'spend', 'currency'] if k in df]
+                st.dataframe(df[columns].rename(columns={'date': '日期', 'campaign_name': '活動', 'adset_name': '廣告群組' if account['platform'] == 'google' else '廣告組合',
+                                                        'ad_name': '廣告', 'asset_group_name': '素材群組', 'asset_group_id': '素材群組 ID', 'ad_type': '廣告格式', 'attribution_unit': '花費認列單位', 'channel': '類型', 'ad_id': '廣告 ID', 'headlines': '目前標題', 'descriptions': '目前說明', 'paths': '目前路徑', 'spend': '花費', 'currency': '幣別'}), hide_index=True, width='stretch')
             else:
                 st.info('API 成功回傳，但此走期與名稱條件沒有符合的廣告。請核對篩選條件。')
     elif result and result.get('not_started'):

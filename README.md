@@ -178,3 +178,27 @@ ad-level project filters to the budget page instead of showing misleading CPA.
 Validation: 75 tests, including attribution rules, provider cost reconciliation,
 conflict handling, preview/save UI and existing budget transfer flows. Actual
 customer Google API reads require deployment and preview in the configured app.
+
+
+### Cross-format Google budget attribution (2026.11.20.22)
+
+The title/description/path selectors are no longer SEARCH-only. Format adapters
+normalize RSA, responsive display, expanded text/dynamic-search, Demand Gen
+(multi-asset/carousel/video/product), app, smart-campaign, text and supported video
+copy fields exposed by the API. Formats without a selected field retain their
+ad ID/cost; non-matching rows with unavailable fields are explicitly reported.
+Unmapped/future formats are not claimed to have complete text support.
+
+PMax uses asset-group/day cost joined to currently linked headline/long-headline/
+description text and asset-group display paths. Its asset group names and exact
+IDs have separate selectors and are never passed off as ad groups or ad IDs.
+A text match attributes the entire group cost, not the cost of an individual asset
+or served combination. Mixed-project groups must be separated or explicitly
+assigned; overlapping plan attribution is rejected by group/day identity.
+All detail costs reconcile against campaign/day totals before returning a report.
+Existing budget snapshots are invalidated after the attribution upgrade.
+
+Validation: 83 tests, including mixed SEARCH/PMax cost reconciliation, multi-asset
+no-double-counting, multiple format normalization, unavailable-copy warnings,
+asset-group identity overlap checks and preview/save UI. Live account API requests
+remain to be verified in the deployed app.

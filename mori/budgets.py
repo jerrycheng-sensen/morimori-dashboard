@@ -11,7 +11,7 @@ from mori.core import AppError
 
 
 def configuration_key(settings):
-    return hashlib.sha256(json.dumps([settings.get('projects', []), settings.get('project_groups', []),
+    return hashlib.sha256(json.dumps(['google-attribution-v2', settings.get('projects', []), settings.get('project_groups', []),
                                      settings.get('accounts', [])], sort_keys=True).encode()).hexdigest()
 
 
@@ -62,9 +62,18 @@ def collect_spend(plans, accounts, fetch, today):
         rows = [r for r in report['rows'] if matches(plan, r)]
         warnings = []
         if accounts[plan['account_key']].get('platform') == 'google' and any(c['field'] != 'campaign_name' for c in rules):
-            warnings.append('文案為 API 目前設定，不代表歷史每次曝光的文案；花費以整則廣告與設定走期認列。')
-            if any(r.get('channel') == 'PERFORMANCE_MAX' for r in report['rows']):
-                warnings.append('帳號有 PMax：標題、說明、路徑、廣告群組與廣告 ID 條件不涵蓋 PMax；若要納入，請增加廣告活動條件並選符合任一條件。')
+            warnings.append('文案為 API 目前設定，不代表歷史每次曝光的文案；花費以整則廣告／整個素材群組與設定走期認列。')
+            if any(r.get('channel') == 'PERFORMANCE_MAX' for r in rows):
+                warnings.append('PMax 以素材群組認列花費：標題／說明／路徑命中即計入該素材群組整筆花費，無法分拆成單一字詞或單一素材的花費；請確認群組沒有混用多個專案。')
+            copy_fields = {c['field'] for c in rules} & {'headlines', 'descriptions', 'paths'}
+            incomplete = [r for r in report['rows'] if copy_fields and 'available_fields' in r
+                          and not copy_fields.issubset(set(r['available_fields'])) and not matches(plan, r)]
+            if incomplete:
+                formats = '、'.join(sorted({r.get('ad_type', 'UNKNOWN') for r in incomplete}))
+                amount = sum(float(r['spend']) for r in incomplete)
+                warnings.append(f'有 {len(incomplete)} 筆廣告／日資料未提供全部選定的文案欄位，未命中且未納入花費 {report["currency"]} {amount:,.2f}（格式：{formats}）。可改用廣告活動、廣告群組或 ID 認列；缺少路徑不代表零花費。')
+            if any(c['field'] in ('adset_name', 'ad_id') for c in rules) and any(r.get('channel') == 'PERFORMANCE_MAX' for r in report['rows']):
+                warnings.append('PMax 使用素材群組，不是一般廣告群組或單一廣告 ID；如需指定 PMax，請選素材群組名稱／ID 或廣告活動。')
         currencies = {r['currency'] for r in rows}
         if len(currencies) > 1 or (currencies and report['currency'] not in currencies):
             raise AppError('回傳資料包含不同幣別，已停止加總。')
@@ -89,7 +98,7 @@ def collect_spend(plans, accounts, fetch, today):
         for row in results[plan['id']].get('rows', []):
             if not row.get('date') or not row.get('campaign_id') or not row.get('spend'):
                 continue
-            key = (plan['account_key'], row['date'], row['campaign_id'], row.get('adset_id', ''), row.get('ad_id', ''))
+            key = (plan['account_key'], row['date'], row['campaign_id'], row.get('adset_id', ''), row.get('ad_id', ''), row.get('asset_group_id', ''))
             if key in owners and owners[key] != plan['id']:
                 conflicts.update((owners[key], plan['id']))
             owners[key] = plan['id']
