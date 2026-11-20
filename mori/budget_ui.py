@@ -148,6 +148,8 @@ def render_budgets(settings, fetch, persist):
             from mori.project_matching import FIELDS, conditions
             if google_plan:
                 st.markdown('**Google 廣告認列條件**')
+                st.caption('Google 層級：廣告活動 → 廣告群組 → 廣告。標題、說明與路徑是廣告內容。')
+                st.caption('廣告 ID 是 API 回傳的數字編號；選擇廣告條件時，須填完整 ID 並完全相符。可先用文案預覽，在明細查看 ID；不必先找 ID 才能設定。')
                 st.caption('只計入上述廣告走期；同一廣告符合多個條件只算一次。廣告以 ID 辨識，不需要廣告名稱。')
                 mode = st.selectbox('條件組合', ['all', 'any'], index=int(plan.get('match_mode', 'all') == 'any'),
                                     format_func=lambda x: '全部條件都符合（AND）' if x == 'all' else '符合任一條件（OR）')
@@ -164,13 +166,13 @@ def render_budgets(settings, fetch, persist):
                                               placeholder='例如：感謝祭；多個文字擇一可填 桃園|新竹', key=f'budget_text_{plan_id}_{i}')
                     if text_i.strip():
                         matching.append({'field': field_i, 'text': text_i.strip()})
-                st.caption('空白條件不使用。PMax 請以行銷活動條件認列；搜尋廣告文案條件不涵蓋 PMax。')
+                st.caption('空白條件不使用。PMax 請以廣告活動條件認列；搜尋廣告文案條件不涵蓋 PMax。')
                 st.caption('文案依 API 目前設定比對，無法還原歷史文案；若曾改稿，請核對廣告 ID 與走期。')
                 field, keyword = (matching[0]['field'], matching[0]['text']) if matching else ('campaign_name', '')
             else:
                 options = ['campaign_name', 'adset_name', 'ad_name']
                 field = st.selectbox('名稱歸類欄位', options, index=options.index(plan.get('match_field', 'campaign_name')) if plan.get('match_field', 'campaign_name') in options else 0,
-                                     format_func=lambda k: {'campaign_name': '行銷活動名稱（Meta／Google）', 'adset_name': '廣告組合名稱（僅 Meta）', 'ad_name': '廣告名稱（僅 Meta）'}[k])
+                                     format_func=lambda k: {'campaign_name': '行銷活動名稱（Meta）', 'adset_name': '廣告組合名稱（僅 Meta）', 'ad_name': '廣告名稱（僅 Meta）'}[k])
                 keyword = st.text_input('名稱包含（必填）', plan.get('keyword', ''), placeholder='例如：感謝祭')
                 matching, mode = [], 'all'
             status = st.selectbox('平台計畫狀態', ['進行中', '已結案'], index=int(plan.get('status') == '已結案'))

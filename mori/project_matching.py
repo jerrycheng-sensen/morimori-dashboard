@@ -1,8 +1,8 @@
 """Literal project attribution shared by budget matching and validation."""
 from mori.core import AppError
 
-FIELDS = {'campaign_name': '行銷活動', 'adset_name': '廣告群組／Meta 廣告組合',
-          'ad_id': '廣告 ID（完全相同）', 'ad_name': '廣告名稱（僅 Meta）',
+FIELDS = {'campaign_name': '廣告活動', 'adset_name': '廣告群組',
+          'ad_id': '廣告（以 ID 精確指定）', 'ad_name': '廣告名稱（僅 Meta）',
           'headlines': '標題（Google 搜尋廣告）', 'descriptions': '說明（Google 搜尋廣告）',
           'paths': '路徑（Google 搜尋廣告）'}
 

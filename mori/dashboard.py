@@ -156,7 +156,7 @@ def render_report(view, keys, period, settings, names, account_by_key):
         from mori.project_matching import conditions
         account = next(a for a in settings['accounts'] if a['key'] == selected_project['account_key'])
         if account['platform'] == 'google' and any(c['field'] != 'campaign_name' for c in conditions(selected_project)):
-            st.info('此 Google 計畫使用廣告明細認列，請到「專案預算」更新並查看專案花費。本頁目前為行銷活動層級，尚不提供這筆計畫的訂位／CPA。')
+            st.info('此 Google 計畫使用廣告明細認列，請到「專案預算」更新並查看專案花費。本頁目前為廣告活動層級，尚不提供這筆計畫的訂位／CPA。')
             return
     shown = filter_rows(df, selected_project, query, channels)
     if shown.empty:

@@ -95,9 +95,9 @@ def validate_settings(data):
             raise AppError("異常判斷層級不正確。")
         account = next(a for a in data["accounts"] if a["key"] == rule["account_key"])
         if account["platform"] == "google" and rule["level"] != "campaign":
-            raise AppError("Google 第一版以行銷活動判斷，完整涵蓋搜尋與 PMax。")
+            raise AppError("Google 異常規則目前以廣告活動判斷，完整涵蓋搜尋與 PMax。")
         if account["platform"] == "google" and (rule.get("adset_filter") or rule.get("ad_filter")):
-            raise AppError("Google 第一版僅支援行銷活動名稱篩選。")
+            raise AppError("Google 異常規則目前僅支援廣告活動名稱篩選。")
         if not 1 <= int(rule.get("period_days", 1)) <= 30:
             raise AppError("異常判斷期間必須在 1 至 30 天。")
         if min(number(rule.get("minimum_spend")), number(rule.get("cpa_threshold"))) < 0:

@@ -64,7 +64,7 @@ def collect_spend(plans, accounts, fetch, today):
         if accounts[plan['account_key']].get('platform') == 'google' and any(c['field'] != 'campaign_name' for c in rules):
             warnings.append('文案為 API 目前設定，不代表歷史每次曝光的文案；花費以整則廣告與設定走期認列。')
             if any(r.get('channel') == 'PERFORMANCE_MAX' for r in report['rows']):
-                warnings.append('帳號有 PMax：標題、說明、路徑、廣告群組與廣告 ID 條件不涵蓋 PMax；若要納入，請增加行銷活動條件並選符合任一條件。')
+                warnings.append('帳號有 PMax：標題、說明、路徑、廣告群組與廣告 ID 條件不涵蓋 PMax；若要納入，請增加廣告活動條件並選符合任一條件。')
         currencies = {r['currency'] for r in rows}
         if len(currencies) > 1 or (currencies and report['currency'] not in currencies):
             raise AppError('回傳資料包含不同幣別，已停止加總。')

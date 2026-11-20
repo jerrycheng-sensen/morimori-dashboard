@@ -82,7 +82,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.20.20")
+st.sidebar.caption("系統版本：2026.11.20.21")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 with st.sidebar.expander("品牌外觀"):
@@ -340,7 +340,7 @@ elif page == "異常規則":
             name = st.text_input("規則名稱", rule.get("name", ""))
             enabled = st.checkbox("啟用規則", rule.get("enabled", False))
             available_levels = ["campaign"] if google else list(LEVELS)
-            level = st.selectbox("判斷層級", available_levels, index=available_levels.index(rule.get("level", "campaign")) if rule.get("level", "campaign") in available_levels else 0, format_func=LEVELS.get)
+            level = st.selectbox("判斷層級", available_levels, index=available_levels.index(rule.get("level", "campaign")) if rule.get("level", "campaign") in available_levels else 0, format_func=lambda k: "廣告活動" if google and k == "campaign" else LEVELS[k])
             days = st.number_input("累計幾天（截至昨天）", 1, 30, int(rule.get("period_days", 1)))
             spend = st.number_input("花費必須超過", min_value=0.0, value=float(rule.get("minimum_spend", 1000)), step=100.0)
             cpa = st.number_input("CPA 必須超過", min_value=0.0, value=float(rule.get("cpa_threshold", 200)), step=10.0)
@@ -357,7 +357,7 @@ elif page == "異常規則":
                 starts_on = st.text_input("規則啟用起日（選填 YYYY-MM-DD）", rule.get("starts_on", ""))
                 ends_on = st.text_input("規則結束日（選填 YYYY-MM-DD）", rule.get("ends_on", ""))
             st.caption("起訖日指被檢查的廣告資料日期。例如結束日 11/19，11/20 早上完成最後一次檢查，11/21 起自動失效；專案手動結案則立即停止後續檢查。")
-            st.caption("門檻使用此帳號幣別。Meta 先套用三層名稱篩選，再彙總到指定層級；Google 首版以活動層級涵蓋搜尋與 PMax。")
+            st.caption("門檻使用此帳號幣別。Meta 先套用三層名稱篩選，再彙總到指定層級；Google 異常規則目前以廣告活動層級涵蓋搜尋與 PMax。")
             if st.form_submit_button("儲存規則"):
                 item = {"id": rule.get("id", uuid.uuid4().hex), "name": name.strip(), "enabled": enabled, "account_key": account_key,
                         "level": level, "period_days": days, "minimum_spend": spend, "cpa_threshold": cpa, "notify_zero": zero,
