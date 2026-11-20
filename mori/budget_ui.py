@@ -128,14 +128,15 @@ def render_budgets(settings, fetch, persist):
         plan = next((p for p in plans if p['id'] == plan_id), {})
         # Keep existing ungrouped records editable without silently reassigning them.
         group_options = [''] + list(groups)
+        account_key = st.selectbox('廣告帳號', list(accounts),
+                          index=list(accounts).index(plan['account_key']) if plan else 0,
+                          format_func=lambda k: accounts[k]['name'], key='budget_plan_account_' + plan_id)
+        google_plan = accounts[account_key]['platform'] == 'google'
         with st.form('budget_plan_' + plan_id):
             owner = st.selectbox('所屬專案', group_options,
                                  index=group_options.index(plan.get('group_id', '')),
                                  format_func=lambda k: groups[k]['name'] if k else '尚未歸入專案（保留既有設定）', key='budget_plan_owner_' + plan_id)
             name = st.text_input('平台計畫名稱', plan.get('name', ''), placeholder='例如：感謝祭｜Meta（含預熱）')
-            account_key = st.selectbox('廣告帳號', list(accounts),
-                                      index=list(accounts).index(plan['account_key']) if plan else 0,
-                                      format_func=lambda k: accounts[k]['name'], key='budget_plan_account_' + plan_id)
             a, b = st.columns(2)
             ad_start = a.date_input('廣告開始日（可含預熱）', date.fromisoformat(plan['start']) if plan else today)
             ad_end = b.date_input('廣告結束日', date.fromisoformat(plan['end']) if plan else today)
@@ -144,13 +145,61 @@ def render_budgets(settings, fetch, persist):
             if locked_budget:
                 st.caption('已有異動紀錄，原始預算已保留；請到「預算調動與紀錄」辦理追加／減列。')
             st.caption('0 代表預算尚未設定，總覽會顯示「未設定」，不會計算花費百分比。')
-            options = ['campaign_name', 'adset_name', 'ad_name']
-            field = st.selectbox('名稱歸類欄位', options, index=options.index(plan.get('match_field', 'campaign_name')),
-                                 format_func=lambda k: {'campaign_name': '行銷活動名稱（Meta／Google）', 'adset_name': '廣告組合名稱（僅 Meta）', 'ad_name': '廣告名稱（僅 Meta）'}[k])
-            keyword = st.text_input('名稱包含（必填）', plan.get('keyword', ''), placeholder='例如：感謝祭')
-            st.caption('Google 請用行銷活動名稱，涵蓋搜尋與 PMax。先核對實際歸類明細，確認沒有漏算或混入其他專案。')
+            from mori.project_matching import FIELDS, conditions
+            if google_plan:
+                st.markdown('**Google 廣告認列條件**')
+                st.caption('只計入上述廣告走期；同一廣告符合多個條件只算一次。廣告以 ID 辨識，不需要廣告名稱。')
+                mode = st.selectbox('條件組合', ['all', 'any'], index=int(plan.get('match_mode', 'all') == 'any'),
+                                    format_func=lambda x: '全部條件都符合（AND）' if x == 'all' else '符合任一條件（OR）')
+                existing = conditions(plan)
+                options = [k for k in FIELDS if k != 'ad_name']
+                matching = []
+                for i in range(6):
+                    condition = existing[i] if i < len(existing) else {}
+                    left, right = st.columns([1, 2])
+                    selected = condition.get('field', 'campaign_name')
+                    field_i = left.selectbox(f'認列欄位 {i+1}', options, index=options.index(selected) if selected in options else 0,
+                                            format_func=lambda k: FIELDS[k], key=f'budget_field_{plan_id}_{i}')
+                    text_i = right.text_input(f'包含文字／廣告 ID {i+1}', condition.get('text', ''),
+                                              placeholder='例如：感謝祭；多個文字擇一可填 桃園|新竹', key=f'budget_text_{plan_id}_{i}')
+                    if text_i.strip():
+                        matching.append({'field': field_i, 'text': text_i.strip()})
+                st.caption('空白條件不使用。PMax 請以行銷活動條件認列；搜尋廣告文案條件不涵蓋 PMax。')
+                st.caption('文案依 API 目前設定比對，無法還原歷史文案；若曾改稿，請核對廣告 ID 與走期。')
+                field, keyword = (matching[0]['field'], matching[0]['text']) if matching else ('campaign_name', '')
+            else:
+                options = ['campaign_name', 'adset_name', 'ad_name']
+                field = st.selectbox('名稱歸類欄位', options, index=options.index(plan.get('match_field', 'campaign_name')) if plan.get('match_field', 'campaign_name') in options else 0,
+                                     format_func=lambda k: {'campaign_name': '行銷活動名稱（Meta／Google）', 'adset_name': '廣告組合名稱（僅 Meta）', 'ad_name': '廣告名稱（僅 Meta）'}[k])
+                keyword = st.text_input('名稱包含（必填）', plan.get('keyword', ''), placeholder='例如：感謝祭')
+                matching, mode = [], 'all'
             status = st.selectbox('平台計畫狀態', ['進行中', '已結案'], index=int(plan.get('status') == '已結案'))
             st.caption('廣告結束日期會停止之後資料日的異常檢查，隔天仍會檢查最後一天；手動結案則立即停止檢查。')
+            if google_plan and st.form_submit_button('預覽認列廣告（不儲存）'):
+                try:
+                    from mori.project_matching import validate_matching
+                    draft = {**plan, 'id': plan.get('id', '_preview'), 'name': name.strip(),
+                             'account_key': account_key, 'start': str(ad_start), 'end': str(ad_end),
+                             'match_field': field, 'keyword': keyword.strip(), 'match_conditions': matching, 'match_mode': mode}
+                    validate_matching(draft, 'google')
+                    if ad_end < ad_start:
+                        raise AppError('廣告結束日不可早於開始日。')
+                    with st.spinner('讀取 Google 廣告並核對認列條件…'):
+                        preview = collect_spend([p for p in plans if p['id'] != draft['id']] + [draft], accounts, fetch, today)[draft['id']]
+                    if preview.get('error'):
+                        raise AppError(preview['error'])
+                    if preview.get('not_started'):
+                        st.info('廣告尚未開始，尚無完整資料日可以預覽。')
+                    else:
+                        st.success(f"預覽花費 {preview['currency']} {preview['spend']:,.2f}；尚未儲存設定。")
+                        for warning in preview.get('warnings', []):
+                            st.warning(warning)
+                        if preview['rows']:
+                            st.dataframe(pd.DataFrame(preview['rows']), hide_index=True, width='stretch')
+                        else:
+                            st.info('沒有符合條件的廣告，請檢查走期與文字。')
+                except (AppError, ValueError) as exc:
+                    st.error(str(exc))
             if st.form_submit_button('儲存平台計畫'):
                 try:
                     if not owner and not plan:
@@ -158,7 +207,8 @@ def render_budgets(settings, fetch, persist):
                     updated = save_plan(settings, {'id': plan.get('id', uuid.uuid4().hex), 'name': name.strip(),
                                                   'account_key': account_key, 'group_id': owner, 'start': str(ad_start),
                                                   'end': str(ad_end), 'budget': budget, 'match_field': field,
-                                                  'keyword': keyword.strip(), 'status': status})
+                                                  'keyword': keyword.strip(), 'status': status,
+                                                  'match_conditions': matching, 'match_mode': mode})
                     st.session_state.pending_budget_plan = next(p['id'] for p in updated['projects'] if p['id'] not in {x['id'] for x in plans}) if not plan else plan['id']
                     persist(updated, notice='平台計畫已儲存。回到預算總覽更新完整廣告走期花費。')
                 except (AppError, ValueError) as exc:
@@ -176,6 +226,8 @@ def render_plan(plan, accounts, result, today, settings):
     data = plan_summary(plan, result, today, settings)
     st.markdown(f"#### {platform}｜{html.escape(plan['name'])}")
     st.caption(f"廣告走期　{plan['start']} ～ {plan['end']}　｜　{data['state']}")
+    for warning in (result or {}).get('warnings', []):
+        st.warning(warning)
     if result and result.get('error'):
         st.error(account['name'] + '：' + result['error'])
     funds = balance(settings, plan['id'], today)
@@ -208,9 +260,9 @@ def render_plan(plan, accounts, result, today, settings):
             rows = result['rows']
             if rows:
                 df = pd.DataFrame(rows)
-                columns = [k for k in ['date', 'campaign_name', 'adset_name', 'ad_name', 'spend', 'currency'] if k in df]
+                columns = [k for k in ['date', 'channel', 'campaign_name', 'adset_name', 'ad_id', 'ad_name', 'headlines', 'descriptions', 'paths', 'spend', 'currency'] if k in df]
                 st.dataframe(df[columns].rename(columns={'date': '日期', 'campaign_name': '活動', 'adset_name': '廣告組合',
-                                                        'ad_name': '廣告', 'spend': '花費', 'currency': '幣別'}), hide_index=True, width='stretch')
+                                                        'ad_name': '廣告', 'channel': '類型', 'ad_id': '廣告 ID', 'headlines': '目前標題', 'descriptions': '目前說明', 'paths': '目前路徑', 'spend': '花費', 'currency': '幣別'}), hide_index=True, width='stretch')
             else:
                 st.info('API 成功回傳，但此走期與名稱條件沒有符合的廣告。請核對篩選條件。')
     elif result and result.get('not_started'):

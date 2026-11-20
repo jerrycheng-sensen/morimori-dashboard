@@ -160,3 +160,21 @@ Google／Streamlit／GitHub／LINE 官方文件已取得；Meta 官方文件在�
 ### 規則與專案期間
 
 規則可新增、編輯與刪除；刪除前會顯示規則名稱並要求確認。規則可選擇連結同一廣告帳號的專案，執行時讀取專案最新起訖日期與結案狀態。未連結時使用規則自己的資料起訖日。資料結束日仍在隔天早上檢查一次，下一天起顯示已到期；專案手動結案立即停止後續檢查。到期不刪除設定，保留查閱。
+
+### Google project budget attribution (2026.11.20.20)
+
+Budget plans support up to six literal conditions with AND/OR: campaign, ad group,
+exact ad ID, RSA headlines, descriptions and path segments. `|` means alternatives
+inside a text condition. The ad window limits cost dates. Preview reads real data
+without saving. SEARCH costs use ad/day records; other channels retain campaign/day
+records and require a campaign condition to match. PMax is not attributed by RSA copy.
+Each ad/day cost is counted once, with reconciliation against campaign SEARCH costs.
+Overlapping Google plan matches block budget calculation and ledger operations.
+Copy is the API's current configuration, not a historical served-copy archive.
+Existing plan IDs, original budgets and transaction history are retained.
+The data overview continues to use campaign reports; it explicitly redirects
+ad-level project filters to the budget page instead of showing misleading CPA.
+
+Validation: 75 tests, including attribution rules, provider cost reconciliation,
+conflict handling, preview/save UI and existing budget transfer flows. Actual
+customer Google API reads require deployment and preview in the configured app.

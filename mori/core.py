@@ -76,14 +76,9 @@ def validate_settings(data):
         start, end = date.fromisoformat(project["start"]), date.fromisoformat(project["end"])
         if end < start:
             raise AppError("專案結束日不可早於開始日。")
-        if not project.get("keyword", "").strip():
-            raise AppError("請填專案名稱篩選字，避免把全帳號誤算為單一專案。")
-        match_field = project.get("match_field", "campaign_name")
-        if match_field not in ("campaign_name", "adset_name", "ad_name"):
-            raise AppError("專案名稱歸類欄位不正確。")
         account = next(a for a in data["accounts"] if a["key"] == project["account_key"])
-        if account["platform"] == "google" and match_field != "campaign_name":
-            raise AppError("Google 專案首版請用行銷活動名稱歸類，才能完整涵蓋 PMax。")
+        from mori.project_matching import validate_matching
+        validate_matching(project, account["platform"])
     from mori.budget_ledger import validate_ledger
     validate_ledger(data)
     for rule in data.get("rules", []):

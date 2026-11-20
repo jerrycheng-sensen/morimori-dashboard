@@ -91,7 +91,7 @@ def render_ledger(settings, fetch, persist):
                     else:
                         ids = [k for k in [source_id, target_id] if k]
                     with st.spinner('核對花費並準備儲存預算異動…'):
-                        results = collect_spend([plans[k] for k in ids], accounts, fetch, today)
+                        results = collect_spend(list(plans.values()), accounts, fetch, today)
                         if kind == '轉移預算':
                             updated = transfer(settings, source_id, target_id, amount, effective, reason, results, op)
                         elif kind == '追加／減列':

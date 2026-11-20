@@ -68,11 +68,9 @@ h3{font-size:1.05rem!important;}
 def filter_rows(df, project=None, query='', channels=None):
     result = df.copy()
     if project:
-        field = project.get('match_field', 'campaign_name')
-        if field not in result:
-            return result.iloc[0:0]
-        result = result[(result.account_key == project['account_key']) &
-                        result[field].fillna('').str.contains(project.get('keyword', ''), case=False, regex=False)]
+        from mori.project_matching import matches
+        mask = result.apply(lambda row: row.get('account_key') == project['account_key'] and matches(project, row), axis=1)
+        result = result[mask]
     if channels is not None:
         result = result[result.channel.isin(channels)]
     if query.strip():
@@ -153,7 +151,14 @@ def render_report(view, keys, period, settings, names, account_by_key):
                                    format_func=lambda k: '全部專案／帳號資料' if k == 'all' else projects[k]['name'])
         channels = ccol.multiselect('廣告類型', sorted(df.channel.unique()), default=sorted(df.channel.unique()))
         query = qcol.text_input('搜尋廣告活動', placeholder='輸入活動名稱關鍵字…')
-    shown = filter_rows(df, projects.get(project_id), query, channels)
+    selected_project = projects.get(project_id)
+    if selected_project:
+        from mori.project_matching import conditions
+        account = next(a for a in settings['accounts'] if a['key'] == selected_project['account_key'])
+        if account['platform'] == 'google' and any(c['field'] != 'campaign_name' for c in conditions(selected_project)):
+            st.info('此 Google 計畫使用廣告明細認列，請到「專案預算」更新並查看專案花費。本頁目前為行銷活動層級，尚不提供這筆計畫的訂位／CPA。')
+            return
+    shown = filter_rows(df, selected_project, query, channels)
     if shown.empty:
         st.info('沒有符合目前篩選的廣告，請調整專案、類型或關鍵字。')
         return

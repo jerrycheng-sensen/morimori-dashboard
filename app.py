@@ -82,7 +82,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.20.19")
+st.sidebar.caption("系統版本：2026.11.20.20")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 with st.sidebar.expander("品牌外觀"):
@@ -288,7 +288,8 @@ elif page == "專案預算":
     def budget_fetch(account, start, end):
         if demo:
             return next(r for r in demo_reports(start, end) if r['rows'][0]['account_key'] == account['key'])
-        return fetch_report(account, start, end)
+        provider = provider_for(account, creds)
+        return provider.fetch_budget(account, start, end) if account['platform'] == 'google' else provider.fetch(account, start, end)
     render_budgets(settings, budget_fetch, save_settings)
 
 elif page == "異常規則":

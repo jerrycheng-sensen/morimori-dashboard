@@ -55,8 +55,16 @@ def collect_spend(plans, accounts, fetch, today):
                     'since': None, 'until': None, 'rows': []}
         start, end = window
         report = fetch(accounts[plan['account_key']], start, end)
-        field = plan.get('match_field', 'campaign_name')
-        rows = [r for r in report['rows'] if plan['keyword'].casefold() in str(r.get(field) or '').casefold()]
+        from mori.project_matching import matches, conditions
+        rules = conditions(plan)
+        if accounts[plan['account_key']].get('platform') == 'google' and any(c['field'] != 'campaign_name' for c in rules) and not report.get('attribution_detail'):
+            raise AppError('尚未取得 Google 廣告明細，不能用文案或廣告群組認列花費。')
+        rows = [r for r in report['rows'] if matches(plan, r)]
+        warnings = []
+        if accounts[plan['account_key']].get('platform') == 'google' and any(c['field'] != 'campaign_name' for c in rules):
+            warnings.append('文案為 API 目前設定，不代表歷史每次曝光的文案；花費以整則廣告與設定走期認列。')
+            if any(r.get('channel') == 'PERFORMANCE_MAX' for r in report['rows']):
+                warnings.append('帳號有 PMax：標題、說明、路徑、廣告群組與廣告 ID 條件不涵蓋 PMax；若要納入，請增加行銷活動條件並選符合任一條件。')
         currencies = {r['currency'] for r in rows}
         if len(currencies) > 1 or (currencies and report['currency'] not in currencies):
             raise AppError('回傳資料包含不同幣別，已停止加總。')
@@ -64,7 +72,7 @@ def collect_spend(plans, accounts, fetch, today):
         if spend < 0:
             raise AppError('回傳負花費，請先核對平台帳務調整。')
         return {'spend': spend, 'currency': report['currency'], 'since': str(start), 'until': str(end),
-                'rows': rows, 'timezone': report.get('timezone')}
+                'rows': rows, 'timezone': report.get('timezone'), 'warnings': warnings}
     results = {}
     with ThreadPoolExecutor(max_workers=min(4, max(1, len(plans)))) as pool:
         jobs = [(plan, pool.submit(one, plan)) for plan in plans]
@@ -73,6 +81,20 @@ def collect_spend(plans, accounts, fetch, today):
                 results[plan['id']] = job.result()
             except AppError as exc:
                 results[plan['id']] = {'error': str(exc)}
+    owners = {}
+    conflicts = set()
+    for plan in plans:
+        if accounts[plan['account_key']].get('platform') != 'google':
+            continue
+        for row in results[plan['id']].get('rows', []):
+            if not row.get('date') or not row.get('campaign_id') or not row.get('spend'):
+                continue
+            key = (plan['account_key'], row['date'], row['campaign_id'], row.get('adset_id', ''), row.get('ad_id', ''))
+            if key in owners and owners[key] != plan['id']:
+                conflicts.update((owners[key], plan['id']))
+            owners[key] = plan['id']
+    for plan_id in conflicts:
+        results[plan_id] = {'error': '同一天的 Google 廣告花費符合多個專案；請縮小文字、廣告 ID 或走期條件，避免重複認列。'}
     return results
 
 

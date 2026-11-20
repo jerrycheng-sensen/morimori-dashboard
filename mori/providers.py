@@ -179,6 +179,50 @@ class GoogleProvider:
         return {"rows": rows, "currency": info["currencyCode"], "timezone": info.get("timeZone", "未提供"),
                 "account_name": info.get("descriptiveName", account["name"]), "conversion_ready": conversion_ready(account)}
 
+    def fetch_budget(self, account, start, end):
+        """Cost-only attribution: search at ad/day, other channels at campaign/day."""
+        start, end = check_dates(start, end)
+        # Reuse currency/timezone metadata; do not mix campaign totals with search ads.
+        report = self.fetch(account, start, end)
+        rows = [r for r in report['rows'] if r['channel'] != 'SEARCH']
+        query = ("SELECT campaign.id, campaign.name, campaign.advertising_channel_type, "
+                 "ad_group.id, ad_group.name, ad_group_ad.ad.id, ad_group_ad.ad.type, "
+                 "ad_group_ad.ad.responsive_search_ad.headlines, "
+                 "ad_group_ad.ad.responsive_search_ad.descriptions, "
+                 "ad_group_ad.ad.responsive_search_ad.path1, ad_group_ad.ad.responsive_search_ad.path2, "
+                 "segments.date, metrics.cost_micros, metrics.impressions, metrics.clicks "
+                 "FROM ad_group_ad WHERE campaign.advertising_channel_type = 'SEARCH' "
+                 f"AND segments.date BETWEEN '{start}' AND '{end}'")
+        for item in self.query(account, query):
+            campaign, group = item['campaign'], item.get('adGroup', {})
+            ad = item.get('adGroupAd', {}).get('ad', {})
+            rsa, metrics = ad.get('responsiveSearchAd', {}), item.get('metrics', {})
+            rows.append({'account_key': account['key'], 'platform': 'google',
+                         'date': item['segments']['date'], 'campaign_id': str(campaign['id']),
+                         'campaign_name': campaign.get('name', ''), 'channel': 'SEARCH',
+                         'adset_id': str(group.get('id', '')), 'adset_name': group.get('name', ''),
+                         'ad_id': str(ad['id']), 'ad_name': 'ID ' + str(ad['id']),
+                         'headlines': [x.get('text', '') for x in rsa.get('headlines', [])],
+                         'descriptions': [x.get('text', '') for x in rsa.get('descriptions', [])],
+                         'paths': [rsa.get('path1', ''), rsa.get('path2', '')],
+                         'currency': report['currency'], 'spend': number(metrics.get('costMicros')) / 1_000_000,
+                         'impressions': number(metrics.get('impressions')), 'clicks': number(metrics.get('clicks')),
+                         'conversions': None, 'conversion_value': None})
+        campaign_costs, ad_costs = {}, {}
+        for row in report['rows']:
+            if row['channel'] == 'SEARCH':
+                key = (row['campaign_id'], row['date'])
+                campaign_costs[key] = campaign_costs.get(key, 0.) + row['spend']
+        for row in rows:
+            if row['channel'] == 'SEARCH':
+                key = (row['campaign_id'], row['date'])
+                ad_costs[key] = ad_costs.get(key, 0.) + row['spend']
+        if any(abs(campaign_costs.get(k, 0.) - ad_costs.get(k, 0.)) > .00001 for k in campaign_costs.keys() | ad_costs.keys()):
+            raise AppError('Google 搜尋廣告明細與活動花費未對上；已停止認列，請重新更新或核對平台報表。')
+        report['rows'] = rows
+        report['attribution_detail'] = True
+        return report
+
 
 def provider_for(account, credentials, session=None):
     if account["platform"] == "meta":

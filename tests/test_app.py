@@ -124,11 +124,15 @@ def test_budget_group_and_two_platform_plans_save_and_render_separate_progress(m
     next(x for x in app.text_input if x.label == '名稱包含（必填）').set_value('示範')
     next(x for x in app.date_input if x.label == '廣告結束日').set_value(date(2026,11,18))
     next(x for x in app.text_input if x.label == '平台計畫名稱').set_value('Google')
-    next(x for x in app.selectbox if x.label == '廣告帳號').select('demo_google')
+    next(x for x in app.selectbox if x.label == '廣告帳號').select('demo_google').run()
+    next(x for x in app.selectbox if x.label == '所屬專案').select(group['id'])
+    next(x for x in app.text_input if x.label == '平台計畫名稱').set_value('Google')
+    next(x for x in app.date_input if x.label == '廣告結束日').set_value(date(2026,11,18))
+    next(x for x in app.text_input if x.label == '包含文字／廣告 ID 1').set_value('示範')
     next(x for x in app.date_input if x.label == '廣告開始日（可含預熱）').set_value(date(2026,10,1))
     next(x for x in app.button if x.label == '儲存平台計畫').click().run()
     assert not app.exception
-    assert len(app.session_state['demo_settings']['projects']) == 2
+    assert len(app.session_state['demo_settings']['projects']) == 2, [e.value for e in app.error]
     next(x for x in app.button if x.label == '更新完整廣告走期花費').click().run()
     assert not app.exception
     assert len(app.session_state['budget_view']['results']) == 2
