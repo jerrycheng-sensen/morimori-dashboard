@@ -84,6 +84,8 @@ def validate_settings(data):
         account = next(a for a in data["accounts"] if a["key"] == project["account_key"])
         if account["platform"] == "google" and match_field != "campaign_name":
             raise AppError("Google 專案首版請用行銷活動名稱歸類，才能完整涵蓋 PMax。")
+    from mori.budget_ledger import validate_ledger
+    validate_ledger(data)
     for rule in data.get("rules", []):
         if not rule.get("id") or rule["id"] in rule_ids or not rule.get("name"):
             raise AppError("規則名稱不可空白，規則代號不可重複。")

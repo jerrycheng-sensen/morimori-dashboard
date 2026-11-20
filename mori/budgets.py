@@ -26,8 +26,9 @@ def spend_window(plan, today):
     return (start, end) if start <= end else None
 
 
-def plan_summary(plan, result, today):
-    budget = float(plan.get('budget', 0))
+def plan_summary(plan, result, today, settings=None):
+    from mori.budget_ledger import balance
+    budget = balance(settings, plan["id"], today)["adjusted"] if settings is not None else float(plan.get("budget", 0))
     if plan.get('status') == '已結案':
         state = '已結案'
     elif today < date.fromisoformat(plan['start']):
@@ -82,6 +83,8 @@ def save_group(settings, group):
     old = next((p for p in groups if p['id'] == group['id']), None)
     item = {**(old or {}), **group}
     updated['project_groups'] = [item if p['id'] == item['id'] else p for p in groups] if old else groups + [item]
+    from mori.budget_ledger import protect_history
+    protect_history(settings, updated)
     return validate_settings(updated)
 
 
@@ -93,4 +96,6 @@ def save_plan(settings, plan):
         raise AppError('此平台計畫已連結異常規則，不能直接換成另一個廣告帳號；請新增平台計畫。')
     item = {**(old or {}), **plan}
     updated['projects'] = [item if p['id'] == item['id'] else p for p in updated['projects']] if old else updated['projects'] + [item]
+    from mori.budget_ledger import protect_history
+    protect_history(settings, updated)
     return validate_settings(updated)

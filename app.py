@@ -82,7 +82,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.20.18")
+st.sidebar.caption("系統版本：2026.11.20.19")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 with st.sidebar.expander("品牌外觀"):
@@ -116,15 +116,18 @@ else:
         st.stop()
 
 
-def save_settings(updated, notice=None, rule_id=None):
+def save_settings(updated, notice=None, rule_id=None, keep_budget_view=False):
     try:
+        from mori.budget_ledger import protect_history
+        protect_history(settings, updated)
         validated = validate_settings(updated)
         if demo:
             st.session_state.demo_settings = validated
         else:
             store.write("settings.json", validated, settings_sha)
         st.session_state.pop("report_view", None)
-        st.session_state.pop("budget_view", None)
+        if not keep_budget_view:
+            st.session_state.pop("budget_view", None)
         st.session_state.save_notice = (notice or "設定已儲存。") if not demo else "示範設定已更新，僅保留在這次預覽。"
         if rule_id:
             st.session_state.pending_rule_selection = rule_id

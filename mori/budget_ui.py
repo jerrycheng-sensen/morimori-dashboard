@@ -12,6 +12,8 @@ import streamlit as st
 from mori.budgets import (collect_spend, configuration_key, plan_summary, save_group,
                           save_plan, time_progress)
 from mori.core import AppError, TAIPEI
+from mori.budget_ledger import balance, impacts
+from mori.budget_ledger_ui import records, render_ledger
 
 
 def render_budgets(settings, fetch, persist):
@@ -20,7 +22,7 @@ def render_budgets(settings, fetch, persist):
     accounts = {a['key']: a for a in settings['accounts']}
     plans = settings['projects']
     st.caption('專案走期、各平台廣告走期分開管理；花費累計完整廣告走期，含預熱，資料截至昨天（台灣時間）。')
-    overview, edit = st.tabs(['預算總覽', '新增／編輯設定'])
+    overview, edit, ledger = st.tabs(['預算總覽', '新增／編輯設定', '預算調動與紀錄'])
     with overview:
         left, right = st.columns([3, 1])
         mode = left.radio('顯示專案', ['全部', '進行中', '已結案'], horizontal=True, key='budget_state_filter')
@@ -38,12 +40,22 @@ def render_budgets(settings, fetch, persist):
             st.caption(f'最近更新：{stamp}（台灣時間）｜平台回補或調整後可再次更新，已結束計畫也能重查。')
         elif plans:
             st.info('按「更新完整廣告走期花費」載入預算進度；未查詢或讀取失敗不會顯示為零花費。')
+        money_filter = st.selectbox('預算狀況', ['全部', '已超支', '廣告結束有結餘'], key='budget_money_filter')
+        def visible(plan):
+            if money_filter == '全部':
+                return True
+            summary = plan_summary(plan, results.get(plan['id']), today, settings)
+            if summary['remaining'] is None:
+                return False
+            return summary['remaining'] < 0 if money_filter == '已超支' else (summary['budget'] > 0 and summary['remaining'] > 0 and today > date.fromisoformat(plan['end']))
         if not groups and not plans:
             st.info('先到「新增／編輯設定」建立專案，再分別加入 Meta、Google 投放計畫。')
         for gid, group in groups.items():
             if mode != '全部' and group['status'] != mode:
                 continue
             children = [p for p in plans if p.get('group_id') == gid]
+            if money_filter != '全部' and not any(visible(p) for p in children):
+                continue
             with st.container(border=True):
                 title, badge = st.columns([3, 1])
                 title.subheader(group['name'])
@@ -64,15 +76,16 @@ def render_budgets(settings, fetch, persist):
                 if not children:
                     st.caption('尚未加入平台投放計畫。請到設定頁加入 Meta 或 Google。')
                 for plan in children:
-                    render_plan(plan, accounts, results.get(plan['id']), today)
-        ungrouped = [p for p in plans if not p.get('group_id') and (mode == '全部' or p['status'] == mode)]
+                    if visible(plan):
+                        render_plan(plan, accounts, results.get(plan['id']), today, settings)
+        ungrouped = [p for p in plans if not p.get('group_id') and (mode == '全部' or p['status'] == mode) and visible(p)]
         if ungrouped:
             st.subheader('既有平台計畫｜尚未歸入專案')
             st.caption('既有資料及異常規則連結均保留。可在設定頁編輯此計畫，指定所屬專案。')
             for plan in ungrouped:
                 with st.container(border=True):
-                    render_plan(plan, accounts, results.get(plan['id']), today)
-        st.caption('進度＝實際花費 ÷ 平台投放預算。金額不另加稅與服務費，不等於儲值餘額。不同專案篩選可能重疊，因此不加總為全帳號花費。走期狀態依設定日期判斷，不代表平台即時開關狀態。')
+                    render_plan(plan, accounts, results.get(plan['id']), today, settings)
+        st.caption('進度＝實際花費 ÷ 調整後可用預算。金額不另加稅與服務費，不等於儲值餘額。不同專案篩選可能重疊，因此不加總為全帳號花費。走期狀態依設定日期判斷，不代表平台即時開關狀態。')
     with edit:
         if not accounts:
             st.info('請先到「帳號與串接」新增廣告帳號。')
@@ -126,7 +139,10 @@ def render_budgets(settings, fetch, persist):
             a, b = st.columns(2)
             ad_start = a.date_input('廣告開始日（可含預熱）', date.fromisoformat(plan['start']) if plan else today)
             ad_end = b.date_input('廣告結束日', date.fromisoformat(plan['end']) if plan else today)
-            budget = st.number_input('平台投放預算（與廣告帳號同幣別，不另加稅／服務費）', min_value=0., value=float(plan.get('budget', 0)), step=1000.)
+            locked_budget = any(plan.get('id') in impacts(t) for t in settings.get('budget_transactions', []))
+            budget = st.number_input('平台投放預算（與廣告帳號同幣別，不另加稅／服務費）', min_value=0., value=float(plan.get('budget', 0)), step=1000., disabled=locked_budget)
+            if locked_budget:
+                st.caption('已有異動紀錄，原始預算已保留；請到「預算調動與紀錄」辦理追加／減列。')
             st.caption('0 代表預算尚未設定，總覽會顯示「未設定」，不會計算花費百分比。')
             options = ['campaign_name', 'adset_name', 'ad_name']
             field = st.selectbox('名稱歸類欄位', options, index=options.index(plan.get('match_field', 'campaign_name')),
@@ -150,22 +166,32 @@ def render_budgets(settings, fetch, persist):
         st.download_button('匯出設定備份（不含權杖）', json.dumps(settings, ensure_ascii=False, indent=2),
                            'mori-settings.json', on_click='ignore')
 
+    with ledger:
+        render_ledger(settings, fetch, persist)
 
-def render_plan(plan, accounts, result, today):
+
+def render_plan(plan, accounts, result, today, settings):
     account = accounts[plan['account_key']]
     platform = 'Meta' if account['platform'] == 'meta' else 'Google Ads'
-    data = plan_summary(plan, result, today)
+    data = plan_summary(plan, result, today, settings)
     st.markdown(f"#### {platform}｜{html.escape(plan['name'])}")
     st.caption(f"廣告走期　{plan['start']} ～ {plan['end']}　｜　{data['state']}")
     if result and result.get('error'):
         st.error(account['name'] + '：' + result['error'])
+    funds = balance(settings, plan['id'], today)
     a, b, c, d = st.columns(4)
     currency = data['currency'] or '帳號幣別'
-    a.metric('平台預算', f"{data['budget']:,.2f}" if data['budget'] > 0 else '未設定')
+    initialized = funds['original'] > 0 or any(plan['id'] in impacts(t) for t in settings.get('budget_transactions', []))
+    a.metric('可用預算', f"{data['budget']:,.2f}" if initialized else '未設定')
     b.metric('累計花費', f"{data['spend']:,.2f}" if data['spend'] is not None else '—')
     c.metric('超支金額' if data['remaining'] is not None and data['remaining'] < 0 else '剩餘預算',
-             f"{abs(data['remaining']):,.2f}" if data['remaining'] is not None and data['budget'] > 0 else '—')
+             f"{abs(data['remaining']):,.2f}" if data['remaining'] is not None and initialized else '—')
     d.metric('花費進度', f"{data['ratio']:.1%}" if data['ratio'] is not None else '—')
+    st.caption(f"原始 {funds['original']:,.2f} ＋ 轉入 {funds['incoming']:,.2f} － 轉出 {funds['outgoing']:,.2f} ＋ 追加／減列 {funds['adjustment']:,.2f} ＝ 可用 {funds['adjusted']:,.2f}")
+    history = records(settings, plan['id'])
+    if not history.empty:
+        with st.expander('此計畫的預算來源與流向'):
+            st.dataframe(history, hide_index=True, width='stretch')
     if data['ratio'] is not None:
         ratio, time_ratio = data['ratio'], data['time_ratio']
         color = '#c34236' if ratio > 1 else '#17421E'

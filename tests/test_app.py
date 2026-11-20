@@ -140,3 +140,43 @@ def test_budget_group_and_two_platform_plans_save_and_render_separate_progress(m
     assert not app.exception
     assert len(app.session_state['demo_settings']['projects']) == 2
     assert app.session_state['demo_settings']['projects'][0]['name'] == 'Meta已更新'
+
+
+def test_budget_transfer_ui_posts_once_and_updates_both_cards(monkeypatch):
+    from mori.core import default_settings
+    from mori.budget_ledger import balance
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    s = default_settings()
+    s['accounts'] = [{'key':'demo_meta','platform':'meta','name':'Meta示範','account_id':'1','meta_action_type':'purchase'}]
+    s['project_groups'] = [{'id':'source','name':'來源案','start':'2026-11-01','end':'2026-11-18','status':'進行中'},
+                           {'id':'target','name':'接收案','start':'2026-11-01','end':'2026-11-30','status':'進行中'}]
+    base = {'account_key':'demo_meta','keyword':'示範','start':'2026-11-18','end':'2026-11-18','status':'進行中'}
+    s['projects'] = [{**base,'id':'a','name':'來源Meta','group_id':'source','budget':60000.},
+                     {**base,'id':'b','name':'接收Meta','group_id':'target','budget':56000.}]
+    app = AppTest.from_file(APP, default_timeout=15)
+    app.session_state['demo_settings'] = s
+    app.run()
+    app.sidebar.radio[0].set_value('專案預算').run()
+    next(x for x in app.button if x.label == '更新完整廣告走期花費').click().run()
+    next(x for x in app.number_input if x.label == '轉移金額').set_value(36386.)
+    next(x for x in app.text_input if x.label == '異動原因／用途').set_value('北部加強')
+    next(x for x in app.checkbox if x.label.startswith('已核對相關專案')).check()
+    next(x for x in app.button if x.label == '確認儲存預算異動').click().run()
+    assert not app.exception
+    updated = app.session_state['demo_settings']
+    assert len(updated['budget_transactions']) == 1, [x.value for x in app.error]
+    assert balance(updated,'a')['adjusted'] == 23614
+    assert balance(updated,'b')['adjusted'] == 92386
+    assert any('來源案' in x.value.to_string() and '接收案' in x.value.to_string() for x in app.dataframe)
+    assert app.session_state['budget_view']['results']['a']['spend'] == 1200
+    assert any(x.label == '可用預算' and x.value == '92,386.00' for x in app.metric)
+    assert next(x for x in app.number_input if x.label.startswith('平台投放預算')).disabled is False  # new-plan editor
+    # Reversal appends a second record and returns both balances.
+    next(x for x in app.radio if x.label == '異動方式').set_value('沖回紀錄').run()
+    next(x for x in app.text_input if x.label == '異動原因／用途').set_value('測試沖回')
+    next(x for x in app.checkbox if x.label.startswith('已核對相關專案')).check()
+    next(x for x in app.button if x.label == '確認儲存預算異動').click().run()
+    assert not app.exception
+    updated = app.session_state['demo_settings']
+    assert len(updated['budget_transactions']) == 2
+    assert balance(updated,'a')['adjusted'] == 60000 and balance(updated,'b')['adjusted'] == 56000
