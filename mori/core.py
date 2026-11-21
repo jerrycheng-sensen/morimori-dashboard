@@ -118,6 +118,8 @@ def validate_settings(data):
     weekdays = schedule.get("weekdays", [])
     if not weekdays or any(type(d) is not int or d not in range(7) for d in weekdays):
         raise AppError("至少選擇一個有效的星期。")
+    from mori.invoices import validate_invoices
+    validate_invoices(data)
     return data
 
 

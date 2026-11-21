@@ -82,7 +82,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.20.31")
+st.sidebar.caption("系統版本：2026.11.22.32")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 # First budget visit loads data. Navigation and filter changes reuse this
 # session snapshot; only the manual button requests another read.
@@ -301,7 +301,20 @@ elif page == "專案預算":
             return next(r for r in demo_reports(start, end) if r['rows'][0]['account_key'] == account['key'])
         provider = provider_for(account, creds)
         return provider.fetch_budget(account, start, end)
-    render_budgets(settings, budget_fetch, save_settings)
+    from mori.invoices import InvoiceDocuments, DemoInvoiceStore
+    invoice_documents = None
+    try:
+        if demo:
+            from cryptography.fernet import Fernet
+            if 'demo_invoice_store' not in st.session_state:
+                st.session_state.demo_invoice_store = DemoInvoiceStore()
+                st.session_state.demo_invoice_key = Fernet.generate_key().decode()
+            invoice_documents = InvoiceDocuments(st.session_state.demo_invoice_store, st.session_state.demo_invoice_key)
+        else:
+            invoice_documents = InvoiceDocuments(store, str(secret('CREDENTIALS_KEY')))
+    except AppError:
+        pass  # Existing reports remain usable; the invoice page explains setup.
+    render_budgets(settings, budget_fetch, save_settings, invoice_documents)
 
 elif page == "異常規則":
     st.write("判斷條件：花費 > 門檻，而且（零轉換，或 CPA > 門檻）。資料截至昨天，避開今天尚未完整的數據。")

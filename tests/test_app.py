@@ -270,3 +270,77 @@ def test_project_rail_switch_search_year_and_status_reuse_spend(monkeypatch):
     app.selectbox(key='budget_nav_year').set_value(2025).run()
     assert any('去年專案' in x.value for x in app.markdown if 'class="project-name"' in x.value)
     assert len(calls) == 1
+
+
+def test_invoice_page_requires_attachment_and_void_updates_only_platform_status(monkeypatch):
+    from mori.core import default_settings
+    from mori.invoices import checked_file, register_invoice
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    s = default_settings()
+    s['accounts'] = [{'key':'demo_meta','platform':'meta','account_id':'123','name':'Meta'},
+                     {'key':'demo_google','platform':'google','account_id':'456','name':'Google'}]
+    s['project_groups'] = [{'id':'f','name':'感謝祭','start':'2026-10-01','end':'2026-11-30','status':'進行中'}]
+    base = {'group_id':'f','name':'平台','budget':100,'keyword':'示範','start':'2026-11-18','end':'2026-11-18','status':'已結案'}
+    s['projects'] = [{**base,'id':'m','account_key':'demo_meta'}, {**base,'id':'g','account_key':'demo_google'}]
+    file = {**checked_file('invoice.pdf', b'%PDF-1.7\nfixture'), 'document_id':'a'*32, 'parts':1}
+    s = register_invoice(s,'m','AB123','2026-11-01','2026-11-02','TWD',100,50,'',file)
+    app = AppTest.from_file(APP, default_timeout=15)
+    app.session_state['demo_settings'] = s
+    app.run()
+    app.sidebar.radio[0].set_value('專案預算').run()
+    view = app.session_state['budget_view']
+    app.button(key='budget_nav_invoices').click().run()
+    assert not app.exception
+    assert len(app.dataframe[0].value) == 2
+    app.selectbox(key='invoice_plan').set_value('g').run()
+    next(b for b in app.button if b.label == '儲存發票與儲值紀錄').click().run()
+    assert any('請先上傳發票' in e.value for e in app.error)
+    assert len(app.session_state['demo_settings']['project_invoices']) == 1
+    app.selectbox(key='invoice_plan').set_value('m').run()
+    next(x for x in app.text_input if x.label.startswith('作廢原因')).set_value('填錯測試')
+    next(x for x in app.checkbox if x.label.startswith('確認作廢')).check()
+    next(b for b in app.button if b.label == '作廢此筆紀錄').click().run()
+    assert not app.exception
+    assert len(app.session_state['demo_settings']['invoice_voids']) == 1
+    from mori.invoices import invoice_summary
+    assert invoice_summary(app.session_state['demo_settings'], 'm')['status'] == '未儲值'
+    assert app.session_state['budget_view'] == view
+
+
+def test_invoice_upload_save_roundtrip_and_overview_link(monkeypatch):
+    import streamlit as st
+    from mori.core import default_settings
+    from mori.invoices import InvoiceDocuments, invoice_summary
+    monkeypatch.setenv('DEMO_MODE', 'true')
+    settings = default_settings()
+    settings['accounts'] = [{'key':'demo_meta','name':'Meta','platform':'meta','account_id':'1'}]
+    settings['project_groups'] = [{'id':'f','name':'感謝祭','start':'2026-10-01','end':'2026-11-30','status':'進行中'}]
+    settings['projects'] = [{'id':'m','name':'Meta','group_id':'f','account_key':'demo_meta','budget':100,
+                             'keyword':'示範','start':'2026-11-18','end':'2026-11-18','status':'已結案'}]
+    class Upload:
+        name = 'receipt.pdf'
+        def getvalue(self):
+            return b'%PDF-1.7\nfixture invoice\n%%EOF'
+    original_uploader = st.file_uploader
+    def uploader(label, *args, **kwargs):
+        return Upload() if label.startswith('發票證明') else original_uploader(label, *args, **kwargs)
+    monkeypatch.setattr(st, 'file_uploader', uploader)
+    app = AppTest.from_file(APP, default_timeout=15)
+    app.session_state['demo_settings'] = settings
+    app.run()
+    app.sidebar.radio[0].set_value('專案預算').run()
+    app.button(key='budget_nav_invoices').click().run()
+    next(x for x in app.text_input if x.label == '發票號碼／憑證編號').set_value('AB12345678')
+    next(x for x in app.number_input if x.label == '發票票面總金額').set_value(100.)
+    next(x for x in app.number_input if x.label.startswith('本專案認列金額')).set_value(60.)
+    next(x for x in app.button if x.label == '儲存發票與儲值紀錄').click().run()
+    assert not app.exception and not app.error
+    saved = app.session_state['demo_settings']
+    assert invoice_summary(saved, 'm')['status'] == '已儲值'
+    row = saved['project_invoices'][0]
+    documents = InvoiceDocuments(app.session_state['demo_invoice_store'], app.session_state['demo_invoice_key'])
+    assert documents.load(row['file']) == Upload().getvalue()
+    assert saved['projects'] == settings['projects']
+    app.button(key='budget_nav_overview').click().run()
+    assert not app.exception
+    assert any('已儲值' in x.value for x in app.markdown)

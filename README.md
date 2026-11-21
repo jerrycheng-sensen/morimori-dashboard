@@ -386,3 +386,50 @@ Validation: 103 tests pass, including preparing-state validation/persistence,
 rule pause/resume at either level, unchanged cost windows and the existing save,
 ledger, attribution, navigation and precision suites. Deployed visual appearance
 still needs confirmation; no browser screenshot was produced in this environment.
+
+### Project funding status and encrypted invoices (2026.11.22.32)
+
+A fourth native budget navigation button, 儲值與發票, adds a per-project/platform
+invoice register. The overview displays independent Meta/Google funding badges,
+active invoice counts and recognized amounts. The register summarizes platform
+counts and recognized totals by currency, plus each plan's adjusted budget and
+its existing cached API spend. Project spend is not summed into an account-wide
+balance, and no wallet balance, payment verification or OCR is implied.
+
+Per the user's definition, at least one effective saved invoice means 已儲值;
+no effective invoice means 未儲值. A partial invoice still has that status but
+its recognized amount and budget gap are shown separately. Metadata includes
+invoice/reference number, issue/registration dates, face and allocated amounts,
+currency, notes, file hash, stable project/account binding and creation time.
+One invoice can be split across projects within the same account, with consistent
+face value/currency and an allocation ceiling. Same-plan duplicate invoice/file
+recognition is rejected. Corrections append a reasoned void, retaining original
+metadata/documents; voiding the last effective invoice restores 未儲值. Existing
+budget allocations, transfers, ad spend and anomaly behavior are unaffected.
+
+PDF/PNG/JPEG files are required and limited to 5 MB each; suffix/magic, nonempty
+content, names, document references and SHA-256 integrity are checked. Attachments
+are Fernet-encrypted with the existing deployment CREDENTIALS_KEY and chunked
+under invoice-documents/ in the existing private state repository. Every chunk
+must be saved before metadata registration; settings use existing SHA conflict
+checks. Partial uploads or a settings conflict may leave unreferenced encrypted
+chunks, but never create a successful funding record. Download is on demand,
+with decryption and hash/size verification, never a public repository URL. No
+files or credentials are added to the application source repository.
+
+Access remains governed by existing website sharing permissions: encryption at
+rest does not restrict visitors who can open the app from using invoice upload,
+download or void controls. No new login/role system was introduced. Production
+sharing/authorized users have not been independently verified. State-repo backups
+include encrypted attachments; restoring them requires the original key, which
+must be backed up through company-approved secret handling separately. Exporting
+settings alone does not export attachment bytes. DEMO_MODE uses only per-session
+encrypted memory, never private-repo writes or real invoices.
+
+Validation: 120 tests pass, covering missing evidence, upload/save/decrypt/read
+round trip, overview linkage, platform isolation, partial funding, bad amounts,
+duplicate and cross-project allocations, append-only voids, account/project
+binding, chunked encryption, corruption/missing chunks, failed uploads, invalid
+files and existing precision/ledger/navigation/alert flows. No real company
+invoice was uploaded, and the deployed upload/download UI still needs live
+acceptance after version .32 loads.

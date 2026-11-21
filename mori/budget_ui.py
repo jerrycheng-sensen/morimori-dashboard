@@ -118,7 +118,7 @@ def management_guide():
     st.markdown('<div class="mori-management-guide"><div class="preparing"><strong>準備中</strong><span>規劃設定・暫不檢查</span></div><div class="running"><strong>進行中</strong><span>依規則及廣告走期檢查</span></div><div class="closed"><strong>已結案</strong><span>停止檢查・保留紀錄</span></div></div>', unsafe_allow_html=True)
 
 
-def render_budgets(settings, fetch, persist):
+def render_budgets(settings, fetch, persist, documents=None):
     st.markdown(BUDGET_STYLES, unsafe_allow_html=True)
     today = datetime.now(TAIPEI).date()
     groups = {g['id']: g for g in settings.get('project_groups', [])}
@@ -128,9 +128,10 @@ def render_budgets(settings, fetch, persist):
     selected = st.session_state.setdefault('budget_section', 'overview')
     choices = [('overview', '預算總覽', ':material/dashboard:'),
                ('edit', '新增／編輯設定', ':material/edit_square:'),
-               ('ledger', '預算調動與紀錄', ':material/swap_horiz:')]
+               ('ledger', '預算調動與紀錄', ':material/swap_horiz:'),
+               ('invoices', '儲值與發票', ':material/receipt_long:')]
     with st.container(key='budget_navigation'):
-        for column, (section, label, icon) in zip(st.columns(3), choices):
+        for column, (section, label, icon) in zip(st.columns(len(choices)), choices):
             column.button(label, icon=icon, key='budget_nav_' + section,
                           type='primary' if selected == section else 'secondary', width='stretch',
                           on_click=select_budget_section, args=(section,))
@@ -286,6 +287,9 @@ def render_budgets(settings, fetch, persist):
 
     elif selected == 'ledger':
         render_ledger(settings, fetch, persist)
+    elif selected == 'invoices':
+        from mori.invoice_ui import render_invoices
+        render_invoices(settings, documents, persist)
 
 
 def select_budget_project(nav_id):
@@ -399,6 +403,9 @@ def render_budget_results(settings, fetch, entries):
             phase = period_state(group['start'], group['end'], today)
             ads_phase = advertising_state(children, today)
             st.markdown(project_header(group['name'], phase, ads_phase), unsafe_allow_html=True)
+            from mori.invoice_ui import funding_badge
+            if children:
+                st.markdown('<div class="mori-status-pair">' + ''.join(funding_badge(settings, p['id'], 'Meta' if accounts[p['account_key']]['platform'] == 'meta' else 'Google Ads') for p in children) + '</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="mori-period-dates">檔期走期　{html.escape(group["start"])} ～ {html.escape(group["end"])}</div>', unsafe_allow_html=True)
             elapsed = time_progress(group['start'], group['end'], today)
             st.progress(elapsed, text=f'專案時間進度 {elapsed:.0%}（含今天，與花費分開計算）')
@@ -448,12 +455,23 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
     account = accounts[plan['account_key']]
     platform = 'Meta' if account['platform'] == 'meta' else 'Google Ads'
     data = plan_summary(plan, result, today, settings)
+    from mori.invoice_ui import funding_badge, proof_caption
     # Project title belongs to the outer envelope; plan name stays in the details.
     phase = period_state(plan['start'], plan['end'], today, plan.get('status') == '已結案')
     st.markdown(f'<div class="mori-platform-heading"><span>{platform}</span>{status_badge("投放", phase)}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="mori-ad-dates">廣告走期　{html.escape(plan["start"])} ～ {html.escape(plan["end"])}</div>', unsafe_allow_html=True)
     if (result or {}).get('includes_today'):
         st.caption('即時數據・含今日未完整花費，平台可能延遲回報或回補。')
+    st.markdown(funding_badge(settings, plan['id']), unsafe_allow_html=True)
+    proof_caption(settings, plan['id'])
+    from mori.invoices import invoice_summary
+    proof = invoice_summary(settings, plan['id'])
+    if data['currency'] and proof['totals']:
+        if set(proof['totals']) != {data['currency']}:
+            st.warning('發票登錄幣別與平台回報不一致，請至「儲值與發票」核對；不同幣別不相加。')
+        elif data['budget'] > 0:
+            registered = proof['totals'][data['currency']]
+            st.caption(f"發票認列／可用預算：{data['currency']} {registered:,.2f}／{data['budget']:,.2f}；有發票不代表全額到位。")
     if not plan.get('group_id'):
         st.caption('平台計畫：' + plan['name'])
     warnings = (result or {}).get('warnings', [])

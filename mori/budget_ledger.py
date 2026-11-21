@@ -187,6 +187,8 @@ def validate_ledger(settings):
 
 
 def protect_history(before, after):
+    from mori.invoices import protect_invoice_history
+    protect_invoice_history(before, after)
     existing = before.get('budget_transactions', [])
     if after.get('budget_transactions', [])[:len(existing)] != existing:
         raise AppError('已儲存的預算異動不可覆寫或刪除，請使用沖回功能。')
