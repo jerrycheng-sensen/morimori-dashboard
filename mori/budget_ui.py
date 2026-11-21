@@ -75,6 +75,12 @@ BUDGET_STYLES = """<style>
 .st-key-budget_settings_editor [data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"]{background:#17421E;color:white;border:1px solid #17421E;}
 .mori-management-guide{display:flex;gap:12px;margin:8px 0 18px;}.mori-management-guide>div{flex:1;padding:14px;border:1px solid;border-radius:10px;}.mori-management-guide strong{display:block;font-size:17px;margin-bottom:5px;}.mori-management-guide span{font-size:14px;}.mori-management-guide .preparing{background:#fff7e8;border-color:#e4c17b;color:#835414;}.mori-management-guide .running{background:#edf6e9;border-color:#9ac291;color:#17421E;}.mori-management-guide .closed{background:#f0f3f6;border-color:#c3cdd8;color:#526174;}
 @media(max-width:700px){.mori-management-guide{flex-direction:column;}.st-key-budget_settings_editor [data-testid="stForm"]{padding:16px!important;}.mori-editor-intro strong{font-size:22px;}}
+
+.mori-account-title{font-size:26px;font-weight:800;color:#17421E;margin:8px 0 10px;}
+.mori-account-combined{display:flex;align-items:center;gap:28px;flex-wrap:wrap;background:linear-gradient(110deg,#17421E,#294f2a);padding:22px 26px;border-radius:15px;border:1px solid #355d34;box-shadow:0 7px 24px #17421e16;margin:6px 0 18px;}
+.mori-account-combined>strong{color:#d3ecb5;font-size:21px;}.mori-account-combined>div{flex:1;min-width:220px;}.mori-account-combined span{display:block;color:#d9e7d1;font-size:15px;}.mori-account-combined b{display:block;color:#fff;font-size:30px;line-height:1.5;margin-top:4px;overflow-wrap:anywhere;}
+.st-key-budget_account_totals [data-testid="stMetric"]{padding:16px 14px;}.st-key-budget_account_totals [data-testid="stMetricValue"]{font-size:clamp(22px,2vw,30px)!important;}
+@media(max-width:700px){.mori-account-combined{gap:16px;padding:18px;}.mori-account-combined b{font-size:26px;}}
 </style>"""
 
 
@@ -118,12 +124,15 @@ def management_guide():
     st.markdown('<div class="mori-management-guide"><div class="preparing"><strong>準備中</strong><span>規劃設定・暫不檢查</span></div><div class="running"><strong>進行中</strong><span>依規則及廣告走期檢查</span></div><div class="closed"><strong>已結案</strong><span>停止檢查・保留紀錄</span></div></div>', unsafe_allow_html=True)
 
 
-def render_budgets(settings, fetch, persist, documents=None):
+def render_budgets(settings, fetch, persist, documents=None, account_fetch=None):
     st.markdown(BUDGET_STYLES, unsafe_allow_html=True)
     today = datetime.now(TAIPEI).date()
     groups = {g['id']: g for g in settings.get('project_groups', [])}
     accounts = {a['key']: a for a in settings['accounts']}
     plans = settings['projects']
+    from mori.account_funding_ui import render_account_totals
+    with st.container(key='budget_account_totals'):
+        render_account_totals(settings, account_fetch)
     st.caption('即時數據｜累計各平台廣告走期花費，含預熱及今日已回報的花費；已結束計畫累計至廣告結束日。')
     selected = st.session_state.setdefault('budget_section', 'overview')
     choices = [('overview', '預算總覽', ':material/dashboard:'),

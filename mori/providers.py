@@ -59,6 +59,33 @@ class MetaProvider:
     def fetch(self, account, start, end):
         return self._fetch(account, start, end, budget=False)
 
+    def fetch_account_spend(self, account, start, end):
+        start, end = check_dates(start, end)
+        account_id = 'act_' + str(account['account_id']).removeprefix('act_')
+        if not re.fullmatch(r'act_\d+', account_id):
+            raise AppError('Meta 帳號 ID 不正確。')
+        info = self._get(account_id, {'fields': 'name,currency,timezone_name'})
+        if not info.get('currency'):
+            raise AppError('Meta 未回傳帳號幣別，已停止加總。')
+        data = self._get(f'{account_id}/insights', {'level': 'account', 'fields': 'spend,date_start,date_stop',
+                         'time_increment': 'all_days', 'time_range': json.dumps({'since': start, 'until': end})})
+        rows = data.get('data')
+        if not isinstance(rows, list) or len(rows) > 1 or data.get('paging', {}).get('next'):
+            raise AppError('Meta 帳號總花費回傳格式不正確，未使用不完整數據。')
+        amount = Decimal('0')
+        if rows:
+            row = rows[0]
+            if row.get('date_start') != start or row.get('date_stop') != end:
+                raise AppError('Meta 帳號花費回傳期間與查詢不一致。')
+            try:
+                amount = Decimal(str(row['spend']))
+            except (KeyError, InvalidOperation):
+                raise AppError('Meta 帳號花費未回傳有效金額。') from None
+        if not amount.is_finite() or amount < 0:
+            raise AppError('Meta 帳號花費回傳金額不正確。')
+        return {'spend_raw': str(amount), 'currency': info['currency'],
+                'timezone': info.get('timezone_name', '未回傳'), 'since': start, 'until': end}
+
     def fetch_budget(self, account, start, end):
         """Read each ad's whole-period cost, rather than adding daily costs."""
         return self._fetch(account, start, end, budget=True)
@@ -208,6 +235,26 @@ class GoogleProvider:
                          "conversions": total, "conversion_value": value})
         return {"rows": rows, "currency": info["currencyCode"], "timezone": info.get("timeZone", "未提供"),
                 "account_name": info.get("descriptiveName", account["name"]), "conversion_ready": conversion_ready(account)}
+
+    def fetch_account_spend(self, account, start, end):
+        start, end = check_dates(start, end)
+        infos = self.query(account, 'SELECT customer.currency_code, customer.time_zone FROM customer LIMIT 1')
+        if not infos or not infos[0].get('customer', {}).get('currencyCode'):
+            raise AppError('Google 未回傳帳號幣別，已停止加總。')
+        rows = self.query(account, "SELECT metrics.cost_micros FROM customer WHERE segments.date BETWEEN '" + start + "' AND '" + end + "'")
+        if len(rows) > 1:
+            raise AppError('Google 帳號總花費回傳多筆資料，已停止加總。')
+        amount = Decimal(0)
+        if rows:
+            try:
+                raw = str(rows[0]['metrics']['costMicros'])
+                if not re.fullmatch(r'\d+', raw):
+                    raise ValueError()
+                amount = Decimal(raw) / Decimal(1_000_000)
+            except (KeyError, ValueError, InvalidOperation):
+                raise AppError('Google 帳號花費未回傳有效整數 micros。') from None
+        return {'spend_raw': str(amount), 'currency': infos[0]['customer']['currencyCode'],
+                'timezone': infos[0]['customer'].get('timeZone', '未回傳'), 'since': start, 'until': end}
 
     def fetch_budget(self, account, start, end):
         """Non-PMax ad/day and PMax asset-group/day cost, joined to current copy."""

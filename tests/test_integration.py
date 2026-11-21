@@ -388,3 +388,26 @@ def test_meta_budget_duplicate_id_across_pages_fails_closed():
                        Response({'data': [item]})])
     with pytest.raises(AppError, match='重複'):
         MetaProvider({'META_ACCESS_TOKEN': 'secret'}, session).fetch_budget(account(), '2026-09-29', '2026-11-18')
+
+
+def test_meta_header_fetches_account_level_whole_period_without_project_filters():
+    session = Session([Response({'currency':'TWD','timezone_name':'Asia/Taipei'}),
+                       Response({'data':[{'spend':'92166','date_start':'2026-09-29','date_stop':'2026-11-18'}]})])
+    result = MetaProvider({'META_ACCESS_TOKEN':'test'},session).fetch_account_spend(account(),'2026-09-29','2026-11-18')
+    assert result['spend_raw'] == '92166'
+    params = session.calls[1][2]['params']
+    assert params['level'] == 'account' and params['time_increment'] == 'all_days'
+    assert 'filtering' not in params and 'actions' not in params['fields']
+
+
+def test_google_header_fetches_customer_cost_in_integer_micros(monkeypatch):
+    provider = GoogleProvider({"GOOGLE_CLIENT_ID":"test", "GOOGLE_CLIENT_SECRET":"test", "GOOGLE_REFRESH_TOKEN":"test"})
+    queries = []
+    def query(account, text):
+        queries.append(text)
+        return [{'customer':{'currencyCode':'TWD','timeZone':'Asia/Taipei'}}] if len(queries) == 1 else [{'metrics':{'costMicros':'143479530001'}}]
+    monkeypatch.setattr(provider,'query',query)
+    result = provider.fetch_account_spend(account('google'),'2026-10-01','2026-11-18')
+    assert result['spend_raw'] == '143479.530001'
+    assert 'FROM customer' in queries[1] and 'segments.date BETWEEN' in queries[1]
+    assert 'conversion' not in queries[1] and 'campaign' not in queries[1]

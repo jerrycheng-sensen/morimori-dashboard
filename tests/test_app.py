@@ -344,3 +344,35 @@ def test_invoice_upload_save_roundtrip_and_overview_link(monkeypatch):
     app.button(key='budget_nav_overview').click().run()
     assert not app.exception
     assert any('已儲值' in x.value for x in app.markdown)
+
+
+def test_header_totals_stay_visible_across_tabs_and_reuse_account_reads(monkeypatch):
+    from mori.core import default_settings
+    import mori.account_funding_ui as header
+    monkeypatch.setenv('DEMO_MODE','true')
+    original = header.collect_accounts
+    calls = []
+    def spy(*args):
+        calls.append(1)
+        return original(*args)
+    monkeypatch.setattr(header,'collect_accounts',spy)
+    s = default_settings()
+    s['accounts'] = [{'key':'demo_meta','name':'Meta','platform':'meta','account_id':'1'}]
+    s['project_groups'] = [{'id':'f','name':'感謝祭','start':'2026-10-01','end':'2026-11-30','status':'進行中'}]
+    s['projects'] = [{'id':'m','name':'Meta','group_id':'f','account_key':'demo_meta','budget':100,
+                      'keyword':'示範','start':'2026-11-18','end':'2026-11-18','status':'已結案'}]
+    app = AppTest.from_file(APP, default_timeout=15)
+    app.session_state['demo_settings'] = s
+    app.run()
+    app.sidebar.radio[0].set_value('專案預算').run()
+    assert not app.exception and len(calls) == 1
+    assert any('雙平台預算總覽' in m.value for m in app.markdown)
+    initial = app.session_state['budget_account_view']
+    for tab in ['budget_nav_invoices','budget_nav_edit','budget_nav_overview']:
+        app.button(key=tab).click().run()
+        assert not app.exception
+        assert any(x.label == '總花費' for x in app.metric)
+    app.text_input(key='budget_nav_search').set_value('找不到').run()
+    assert app.session_state['budget_account_view'] == initial and len(calls) == 1
+    app.button(key='account_totals_reload').click().run()
+    assert not app.exception and len(calls) == 2

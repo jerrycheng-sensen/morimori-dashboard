@@ -433,3 +433,41 @@ binding, chunked encryption, corruption/missing chunks, failed uploads, invalid
 files and existing precision/ledger/navigation/alert flows. No real company
 invoice was uploaded, and the deployed upload/download UI still needs live
 acceptance after version .32 loads.
+
+### Header account funding and spend totals (2026.11.22.33)
+
+The budget page now shows the requested summary directly under the hero and
+above the four navigation buttons, visible across overview/edit/ledger/invoice
+sections. A combined band shows total invoice-recognized funding (可使用預算)
+and actual account spend (已使用預算); side-by-side Meta/Google cards show each
+platform's totals. Combined totals are withheld if any account read fails or
+currencies differ. No registered invoices is labelled 尚未登錄發票, rather than
+pretending the account has a verified zero funding balance. Different currencies
+are displayed separately; no currency conversion or wallet-balance claim is made.
+
+Spend is queried directly at Meta Insights account/all_days level and Google
+customer cost_micros level. It is never the sum of overlapping project results.
+Repeated configuration records for the same physical account are deduplicated;
+integer Google micros and Decimal amounts preserve source precision. Missing,
+malformed, negative, nonfinite or wrong-period results stay unknown, not zero.
+Existing project/provider paths, invoices, funding states, allocations and
+transfers are unchanged; a transfer never becomes additional funding.
+
+All totals have an explicit date window through today in each account's time
+zone. By default it begins at the oldest configured advertising start or invoice
+registration date (including voided historical records so voiding does not shrink
+the reporting window). Optional custom start is available under the calculation
+expander. Funding includes effective invoice allocations registered in that same
+window. The totals are not claimed as lifetime account totals or final billing;
+platform reporting may delay/revise today's data. Windows beyond the existing
+three-year single-request limit fail visibly; choose a supported custom window.
+
+Initial/date/account/window changes read costs; ordinary tab, search and project
+navigation reuses the session snapshot. 重新讀取全部預算 reloads account totals
+and requests a project refresh when the overview renders. Invoice-only changes
+recompute funding locally unless they expand the default query window. No
+minute polling was added. 129 tests pass, covering unique-account queries,
+account-vs-project scope, void/date exclusions, precision, unknown/error and mixed
+currency states, provider request shapes and header visibility/cache/manual
+refresh across navigation. No live cost totals or deployed visual screenshot have
+been independently verified after this change.

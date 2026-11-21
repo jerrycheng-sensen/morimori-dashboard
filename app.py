@@ -82,7 +82,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.22.32")
+st.sidebar.caption("系統版本：2026.11.22.33")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 # First budget visit loads data. Navigation and filter changes reuse this
 # session snapshot; only the manual button requests another read.
@@ -314,7 +314,14 @@ elif page == "專案預算":
             invoice_documents = InvoiceDocuments(store, str(secret('CREDENTIALS_KEY')))
     except AppError:
         pass  # Existing reports remain usable; the invoice page explains setup.
-    render_budgets(settings, budget_fetch, save_settings, invoice_documents)
+    def account_spend_fetch(account, start, end):
+        if demo:
+            from decimal import Decimal
+            report = next(r for r in demo_reports(start, end) if r['rows'][0]['platform'] == account['platform'])
+            return {'spend_raw': str(sum((Decimal(str(r['spend'])) for r in report['rows']), Decimal(0))),
+                    'currency': report['currency'], 'timezone': report['timezone'], 'since': str(start), 'until': str(end)}
+        return provider_for(account, creds).fetch_account_spend(account, start, end)
+    render_budgets(settings, budget_fetch, save_settings, invoice_documents, account_spend_fetch)
 
 elif page == "異常規則":
     st.write("判斷條件：花費 > 門檻，而且（零轉換，或 CPA > 門檻）。資料截至昨天，避開今天尚未完整的數據。")
