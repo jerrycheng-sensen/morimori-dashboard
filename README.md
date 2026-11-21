@@ -471,3 +471,32 @@ account-vs-project scope, void/date exclusions, precision, unknown/error and mix
 currency states, provider request shapes and header visibility/cache/manual
 refresh across navigation. No live cost totals or deployed visual screenshot have
 been independently verified after this change.
+
+### Planned budget totals, invoice follow-up and refined icon (2026.11.22.34)
+
+The header labels are now 專案總預算 and 累計花費. Budget totals are summed from
+all configured platform-plan envelopes, including preparing/closed plans and
+ledger adjustments through today. Internal transfers remain neutral in the
+overall sum. They do not depend on invoice recognition or the selected account
+spend period. Spend remains the direct whole-account API cost for the displayed
+period. The help text states these separate scopes, rather than implying a wallet
+balance or an available-cash subtraction.
+
+An invoice-follow-up line below each budget shows unique projects and missing
+platform plans. A Meta/Google pair in one project counts as one missing project,
+with two missing plans. Existing at-least-one-effective-invoice funding status is
+unchanged, including the partial-allocation rule. The expandable pending list and
+header invoice action open the existing invoice page, optionally preselecting the
+exact plan. Project/platform records and all existing financial data are retained.
+
+Budget currency uses returned account metadata or explicit account currency;
+unconfirmed accounts remain separate labelled buckets. Different currencies are
+never combined into a single amount. Unset zero budgets have a separate reminder.
+The page hero replaces the banknote with a vector budget ledger and allocation
+chart, using cream/lime accents on the existing #17421E surface.
+
+Validation: 131 tests pass. New assertions cover budgets without invoices,
+project-versus-plan pending counts, void reclassification, neutral transfers,
+net adjustments and the preselected invoice shortcut without another API read.
+Existing precision, encrypted documents, ledger, provider, UI and alert suites
+remain passing. Deployed visual appearance still needs acceptance after .34 loads.

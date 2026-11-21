@@ -78,7 +78,7 @@ BUDGET_STYLES = """<style>
 
 .mori-account-title{font-size:26px;font-weight:800;color:#17421E;margin:8px 0 10px;}
 .mori-account-combined{display:flex;align-items:center;gap:28px;flex-wrap:wrap;background:linear-gradient(110deg,#17421E,#294f2a);padding:22px 26px;border-radius:15px;border:1px solid #355d34;box-shadow:0 7px 24px #17421e16;margin:6px 0 18px;}
-.mori-account-combined>strong{color:#d3ecb5;font-size:21px;}.mori-account-combined>div{flex:1;min-width:220px;}.mori-account-combined span{display:block;color:#d9e7d1;font-size:15px;}.mori-account-combined b{display:block;color:#fff;font-size:30px;line-height:1.5;margin-top:4px;overflow-wrap:anywhere;}
+.mori-account-combined>strong{color:#d3ecb5;font-size:21px;}.mori-account-combined>div{flex:1;min-width:220px;}.mori-account-combined span{display:block;color:#d9e7d1;font-size:15px;}.mori-account-combined small{display:block;color:#d5e5c7;font-size:14px;margin-top:6px;}.mori-account-combined b{display:block;color:#fff;font-size:30px;line-height:1.5;margin-top:4px;overflow-wrap:anywhere;}
 .st-key-budget_account_totals [data-testid="stMetric"]{padding:16px 14px;}.st-key-budget_account_totals [data-testid="stMetricValue"]{font-size:clamp(22px,2vw,30px)!important;}
 @media(max-width:700px){.mori-account-combined{gap:16px;padding:18px;}.mori-account-combined b{font-size:26px;}}
 </style>"""
@@ -86,13 +86,17 @@ BUDGET_STYLES = """<style>
 
 def render_budget_heading():
     st.markdown(BUDGET_STYLES, unsafe_allow_html=True)
-    icon = ('<svg width="43" height="43" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">'
-            '<rect x="5" y="12" width="38" height="25" rx="4" stroke="#d8f3b5" stroke-width="2.5"/>'
-            '<path d="M11 8h27M10 19a4 4 0 0 0 4-4M34 15a4 4 0 0 0 4 4M10 30a4 4 0 0 1 4 4M34 34a4 4 0 0 1 4-4" stroke="#d8f3b5" stroke-width="2" stroke-linecap="round"/>'
-            '<circle cx="24" cy="24.5" r="6" stroke="#d8f3b5" stroke-width="2.5"/></svg>')
+    icon = ('<svg width="52" height="52" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">'
+            '<defs><linearGradient id="ledger" x1="10" y1="6" x2="46" y2="50" gradientUnits="userSpaceOnUse">'
+            '<stop stop-color="#f0f2d5"/><stop offset="1" stop-color="#a9cb79"/></linearGradient></defs>'
+            '<path d="M14 7h27a5 5 0 0 1 5 5v32a5 5 0 0 1-5 5H14a5 5 0 0 1-5-5V12a5 5 0 0 1 5-5Z" fill="#d8e8bc" fill-opacity=".07" stroke="url(#ledger)" stroke-width="2"/>'
+            '<path d="M17 7v42M7 17h5M7 29h5M7 41h5M23 38h16" stroke="url(#ledger)" stroke-width="2" stroke-linecap="round"/>'
+            '<path d="M32 17a9 9 0 1 0 9 9h-9v-9Z" stroke="url(#ledger)" stroke-width="2" stroke-linejoin="round"/>'
+            '<path d="M36 13v9h9a9 9 0 0 0-9-9Z" fill="#c8dfa0" fill-opacity=".75"/>'
+            '<path d="M24 44h3M31 44h8" stroke="#9fbd78" stroke-width="1.7" stroke-linecap="round"/></svg>')
     src = base64.b64encode(icon.encode()).decode()
     st.markdown('<header class="mori-budget-hero"><div class="mori-budget-hero-inner">'
-                f'<div class="mori-budget-symbol" aria-hidden="true"><img src="data:image/svg+xml;base64,{src}" width="43" height="43" alt=""></div><div>'
+                f'<div class="mori-budget-symbol" aria-hidden="true"><img src="data:image/svg+xml;base64,{src}" width="52" height="52" alt=""></div><div>'
                 '<div class="hero-category">廣告智慧儀表板・專案管理</div>'
                 '<h1>專案預算</h1><p>掌握每個專案的預算、花費與結餘</p>'
                 '</div></div></header>', unsafe_allow_html=True)

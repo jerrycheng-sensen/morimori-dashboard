@@ -60,3 +60,43 @@ def test_invalid_account_cost_remains_unknown(patch):
     result = {'spend_raw':'100','currency':'TWD','since':str(START),'until':str(END),**patch}
     results = collect_accounts(s, lambda *args:result, START, END)
     assert all(r.get('error') for r in results.values())
+
+
+def budget_settings():
+    s = default_settings()
+    s['accounts'] = [{'key':'m','platform':'meta','account_id':'123','name':'Meta','currency':'TWD'},
+                     {'key':'g','platform':'google','account_id':'456','name':'Google','currency':'TWD'}]
+    s['project_groups'] = [{'id':'f','name':'感謝祭'}]
+    base = {'group_id':'f','start':'2026-09-29','end':'2026-11-18','name':'平台計畫'}
+    s['projects'] = [{**base,'id':'m','account_key':'m','budget':100},
+                     {**base,'id':'g','account_key':'g','budget':200}]
+    return s
+
+
+def test_project_budgets_show_without_invoices_and_count_projects_once():
+    from mori.account_funding import project_budget_totals
+    s = budget_settings()
+    result = project_budget_totals(s, {}, END)
+    assert result['totals']['TWD'] == Decimal('300')
+    assert result['missing_projects'] == 1 and len(result['pending']) == 2
+    s['project_invoices'] = [{'id':'i1','plan_id':'m','currency':'TWD','allocated_amount':'50'}]
+    result = project_budget_totals(s, {}, END)
+    assert result['totals']['TWD'] == 300  # Invoice amount never replaces budget.
+    assert result['missing_projects'] == 1 and [r['plan_id'] for r in result['pending']] == ['g']
+    s['invoice_voids'] = [{'invoice_id':'i1'}]
+    assert len(project_budget_totals(s, {}, END)['pending']) == 2
+
+
+def test_budget_transfer_is_neutral_and_adjustments_are_counted():
+    from mori.account_funding import project_budget_totals
+    s = budget_settings()
+    s['budget_transactions'] = [{'id':'t','kind':'transfer','amount':30,'source_id':'m','target_id':'g','effective_on':'2026-11-01'},
+                                {'id':'a','kind':'adjustment','amount':20,'target_id':'m','effective_on':'2026-11-02'}]
+    result = project_budget_totals(s, {}, END)
+    assert result['totals']['TWD'] == Decimal('320')
+    assert result['platforms']['meta']['totals']['TWD'] == 90
+    assert result['platforms']['google']['totals']['TWD'] == 230
+    s['accounts'][0].pop('currency')
+    result = project_budget_totals(s, {('meta','123'):{'error':'API error'}}, END)
+    assert result['platforms']['meta']['totals']['?meta:123'] == 90
+    assert result['totals']['TWD'] == 230  # Never assign the other account's currency.

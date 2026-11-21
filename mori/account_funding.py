@@ -73,3 +73,46 @@ def summary_totals(settings, results, start, end):
                     'spent': sum((p['spent'].get(cur, Decimal(0)) for p in existing), Decimal(0)),
                     'invoices': sum(p['invoices'] for p in existing)}
     return summary, combined
+
+
+def project_budget_totals(settings, results, through):
+    """Sum current plan envelopes, independently of invoices and spend failures.
+
+    Currency comes from the account API or explicit account configuration. An
+    unconfirmed account stays in its own bucket; its numeric budget can still be
+    shown without pretending that its currency matches another account.
+    """
+    from mori.budget_ledger import balance, money, impacts
+    from mori.invoices import invoice_summary
+    accounts = {a['key']: a for a in settings['accounts']}
+    groups = {g['id']: g for g in settings.get('project_groups', [])}
+    platforms = {p: {'totals': {}, 'pending': [], 'plans': 0, 'unset': 0} for p in ('meta', 'google')}
+    all_pending = []
+    for plan in settings['projects']:
+        account = accounts[plan['account_key']]
+        identity = account_identity(account)
+        report = results.get(identity, {})
+        currency = report.get('currency') or account.get('currency', '')
+        if not re.fullmatch(r'[A-Z]{3}', str(currency)):
+            currency = '?' + ':'.join(identity)
+        value = platforms[account['platform']]
+        value['plans'] += 1
+        amount = money(balance(settings, plan['id'], through)['adjusted'])
+        value['totals'][currency] = value['totals'].get(currency, Decimal(0)) + amount
+        if not plan.get('budget') and not any(plan['id'] in impacts(t)
+                                               for t in settings.get('budget_transactions', [])):
+            value['unset'] += 1
+        if not invoice_summary(settings, plan['id'])['count']:
+            group = groups.get(plan.get('group_id'))
+            pending = {'plan_id': plan['id'], 'project_key': 'group:' + group['id'] if group else 'plan:' + plan['id'],
+                       'name': group['name'] if group else plan['name'], 'platform': account['platform'],
+                       'account_name': account['name']}
+            value['pending'].append(pending)
+            all_pending.append(pending)
+    totals = {}
+    for value in platforms.values():
+        for cur, amount in value['totals'].items():
+            totals[cur] = totals.get(cur, Decimal(0)) + amount
+    return {'platforms': platforms, 'totals': totals, 'pending': all_pending,
+            'missing_projects': len({r['project_key'] for r in all_pending}),
+            'plans': len(settings['projects']), 'unset': sum(v['unset'] for v in platforms.values())}

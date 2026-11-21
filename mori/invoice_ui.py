@@ -65,6 +65,9 @@ def render_invoices(settings, documents, persist):
     st.dataframe(pd.DataFrame(all_rows), hide_index=True, width='stretch')
     st.caption('花費沿用預算總覽本次讀取結果；需要最新數字時，至「預算總覽」按重新讀取。不同專案可能重疊，不加總為全帳號花費。')
     st.subheader('選擇專案／平台，登錄或查看發票')
+    pending_plan = st.session_state.pop('pending_invoice_plan', None)
+    if pending_plan in {p['id'] for p in plans}:
+        st.session_state.invoice_plan = pending_plan
     plan_id = st.selectbox('發票所屬專案與平台', [p['id'] for p in plans], format_func=label, key='invoice_plan')
     st.markdown(funding_badge(settings, plan_id), unsafe_allow_html=True)
     proof_caption(settings, plan_id)
