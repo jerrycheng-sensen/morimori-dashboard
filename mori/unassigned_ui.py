@@ -14,6 +14,14 @@ from mori.money_display import money_table
 from mori.unassigned import scan, assign, undo, reclassify
 
 
+def current_status(row):
+    states = {'ACTIVE':'已啟用','PAUSED':'已暫停','DELETED':'已刪除','ARCHIVED':'已封存',
+              'CAMPAIGN_PAUSED':'活動已暫停','ADSET_PAUSED':'廣告組合已暫停',
+              'PENDING_REVIEW':'審核中','DISAPPROVED':'未通過審核'}
+    status = row.get('current_status')
+    return states.get(status, '平台狀態：' + status if status and status != 'UNKNOWN' else '未核對')
+
+
 def pending_units(rows):
     grouped = {}
     for row in rows:
@@ -57,15 +65,17 @@ def render_unassigned(settings, fetch, persist, start, end):
                 # Scan entries carry a copy of the platform row, not inferred names.
                 rows.append({'平台': 'Meta' if item['platform'] == 'meta' else 'Google Ads',
                              '廣告帳號': item['account_name'], '廣告活動': row.get('campaign_name', ''),
-                             '廣告／素材群組': row.get('asset_group_name') or row.get('ad_name') or 'ID ' + item['unit']['id'],
-                             'ID': item['unit']['id'], '目前廣告狀態': '未核對',
+                             '最新廣告／素材群組名稱': row.get('asset_group_name') or row.get('ad_name') or 'ID ' + item['unit']['id'],
+                             '報表原名稱': row.get('insights_ad_name') if row.get('renamed') else '—',
+                             'ID': item['unit']['id'], '目前廣告狀態': current_status(row),
+                             '名稱核對時間': str(row.get('names_checked_at', '—'))[:19].replace('T', ' '),
                              '花費查詢起日': item['since'], '花費查詢迄日': item['until'],
                              '待歸案花費': item['amount'], '幣別': item['currency']})
             money_table(st, pd.DataFrame(rows), [r['platform'] for r in items], {'待歸案花費'})
-            st.caption('這是歷史花費清單，尚未確認廣告目前是否存在、暫停或已刪除。請用廣告 ID 核對同一個廣告帳號；查詢日期不是廣告實際開始／停止投放日。')
+            st.caption('Meta 先用廣告 ID 核對最新名稱，再判斷所屬專案；報表原名稱只供核對。最新名稱讀不到的項目另列「待核對」，不直接判成漏列。查詢日期不是廣告實際開關日期。')
             st.caption('只列查詢期間內、未符合任何專案的花費。PMax 以整個素材群組歸案，不能拆分單一素材。Meta 分段查詢金額可能受平台四捨五入影響；儲存後以專案整段走期重新讀取。')
             index = st.selectbox('選擇要歸案的廣告', range(len(items)),
-                                 format_func=lambda i: rows[i]['平台'] + '｜' + rows[i]['廣告／素材群組'] + '｜ID ' + items[i]['unit']['id'], key='unassigned_unit')
+                                 format_func=lambda i: rows[i]['平台'] + '｜' + rows[i]['最新廣告／素材群組名稱'] + '｜ID ' + items[i]['unit']['id'], key='unassigned_unit')
             item = items[index]
             accounts = {a['key']: a for a in settings['accounts']}
             options = [p['id'] for p in settings['projects'] if p.get('group_id') and account_identity(accounts[p['account_key']]) == tuple(item['physical'])]
@@ -88,8 +98,16 @@ def render_unassigned(settings, fetch, persist, start, end):
                             persist(updated, notice='廣告已歸入專案，預算總覽將重新讀取花費。')
                         except AppError as exc:
                             st.error(str(exc))
-        elif not result['errors'] and not result['conflicts']:
+        elif not result['errors'] and not result['conflicts'] and not result.get('unverified'):
             st.success('這次取得的廣告花費，都已找到所屬專案。')
+        if result.get('unverified'):
+            unknown = pending_units(result['unverified'])
+            st.warning(f'另有 {len(unknown)} 則廣告最新名稱待核對，尚未判定是否漏列。')
+            data = [{'廣告帳號': item['account_name'], '廣告 ID': item['unit']['id'],
+                     '報表原名稱（未核對）': item['row'].get('insights_ad_name', item['row'].get('ad_name', '')),
+                     '待核對花費': item['amount'], '幣別': item['currency'], '原因': item['row'].get('name_lookup_issue') or '最新名稱讀取失敗，不能直接視為已刪除'} for item in unknown]
+            money_table(st, pd.DataFrame(data), [item['platform'] for item in unknown], {'待核對花費'})
+            st.caption('歷史花費仍保留。請重新檢查；若仍讀不到，需核對權限與同一個廣告 ID。')
         if result['conflicts']:
             st.error('有廣告同時符合多個專案，請到「新增／編輯設定」縮小認列條件或調整廣告日期。')
             for row in pending_units(result['conflicts']):
