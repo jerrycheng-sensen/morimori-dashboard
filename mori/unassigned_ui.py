@@ -50,7 +50,7 @@ def render_unassigned(settings, fetch, persist, start, end):
             st.error(error)
         items = pending_units(result['pending'])
         if items:
-            st.warning(f'發現 {len(items)} 則廣告／素材群組有花費尚未歸案。')
+            st.warning(f'有 {len(items)} 則廣告／素材群組的歷史花費尚未歸案，不代表目前仍在投放。')
             rows = []
             for item in items:
                 row = item['row'] if 'row' in item else item
@@ -58,9 +58,11 @@ def render_unassigned(settings, fetch, persist, start, end):
                 rows.append({'平台': 'Meta' if item['platform'] == 'meta' else 'Google Ads',
                              '廣告帳號': item['account_name'], '廣告活動': row.get('campaign_name', ''),
                              '廣告／素材群組': row.get('asset_group_name') or row.get('ad_name') or 'ID ' + item['unit']['id'],
-                             'ID': item['unit']['id'], '開始日': item['since'], '結束日': item['until'],
+                             'ID': item['unit']['id'], '目前廣告狀態': '未核對',
+                             '花費查詢起日': item['since'], '花費查詢迄日': item['until'],
                              '待歸案花費': item['amount'], '幣別': item['currency']})
             money_table(st, pd.DataFrame(rows), [r['platform'] for r in items], {'待歸案花費'})
+            st.caption('這是歷史花費清單，尚未確認廣告目前是否存在、暫停或已刪除。請用廣告 ID 核對同一個廣告帳號；查詢日期不是廣告實際開始／停止投放日。')
             st.caption('只列查詢期間內、未符合任何專案的花費。PMax 以整個素材群組歸案，不能拆分單一素材。Meta 分段查詢金額可能受平台四捨五入影響；儲存後以專案整段走期重新讀取。')
             index = st.selectbox('選擇要歸案的廣告', range(len(items)),
                                  format_func=lambda i: rows[i]['平台'] + '｜' + rows[i]['廣告／素材群組'] + '｜ID ' + items[i]['unit']['id'], key='unassigned_unit')
