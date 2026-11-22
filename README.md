@@ -500,3 +500,32 @@ project-versus-plan pending counts, void reclassification, neutral transfers,
 net adjustments and the preselected invoice shortcut without another API read.
 Existing precision, encrypted documents, ledger, provider, UI and alert suites
 remain passing. Deployed visual appearance still needs acceptance after .34 loads.
+
+### Calm budget-page hierarchy and naming (2026.11.22.35)
+
+Budget summary labels now consistently use 累積預算, including combined,
+per-platform and per-project totals. Per-plan usable budget and all arithmetic
+retain their existing meaning; no financial data or invoice state changed.
+
+The budget workspace now scopes a warm-white/stone surface treatment with muted
+champagne #B79A65 details, retaining Mori #17421E for hero/project title bands
+and selected primary actions. Decorative lime strips on metrics, project title
+edges and rail selection markers are replaced. Semantic green/amber/gray status
+badges remain distinguishable. The page background loses its grid/green wash only
+while this budget workspace is mounted. Other app pages retain their theme.
+
+Account totals, native navigation and project content have explicit pale-gray
+separators and consistent margins. Project/platform cards gain independent
+padding, spacing and light borders, with shorter spacing on mobile. The workspace
+also overrides the global ancestor:first-child metric styling that previously
+made every Meta metric green merely because the platform occupied the left
+column. Numeric cards now have a consistent warm-white surface and dark-green
+values, reducing unintended emphasis. Selected-button hover keeps white text on
+a dark-green fill; keyboard focus keeps a visible champagne outline. A duplicate
+explanatory caption between summary and navigation was removed; date/reporting
+information remains with the relevant totals and project read status.
+
+Validation: all 131 tests passed after the name/layout change; the AppTest suite
+was rerun after the final contrast/spacing cleanup. No new implementation-mirror
+tests were added for reversible cosmetic changes. Real deployed desktop/mobile
+appearance still requires visual acceptance after .35 loads.

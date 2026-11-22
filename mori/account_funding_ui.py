@@ -33,8 +33,8 @@ def render_account_totals(settings, fetch):
         custom = st.checkbox('自行指定統計起日', key='account_totals_custom_since')
         since = st.date_input('帳號總覽統計起日', suggested, max_value=today, key='account_totals_since') if custom else suggested
         st.caption('預設從最早的平台計畫開始日或發票儲值登錄日（含作廢歷史）起算，至今日；不是帳號成立以來的歷史總額。')
-        st.caption('專案總預算＝所有已建立平台計畫的調整後預算，含準備中與已結案，不受本區花費起日篩選。內部轉移只改分配，雙平台合計不會重複增加。')
-        st.caption('累計花費＝上述期間的完整帳號花費，可能包含未建立專案的廣告；與專案總預算的範圍不同，不直接相減作為餘額。發票驗收獨立追蹤，不影響預算金額，也不代表平台錢包餘額。')
+        st.caption('累積預算＝所有已建立平台計畫的調整後預算，含準備中與已結案，不受本區花費起日篩選。內部轉移只改分配，雙平台合計不會重複增加。')
+        st.caption('累計花費＝上述期間的完整帳號花費，可能包含未建立專案的廣告；與累積預算的範圍不同，不直接相減作為餘額。發票驗收獨立追蹤，不影響預算金額，也不代表平台錢包餘額。')
     manual = st.button('重新讀取全部預算', key='account_totals_reload', disabled=not bool(settings['accounts']),
                        help='更新上方帳號總花費；預算總覽也會更新各專案。平常切換專案不重抓資料。')
     key = view_key(settings, since, today)
@@ -60,7 +60,7 @@ def render_account_totals(settings, fetch):
             for cur, amount in value['spent'].items():
                 spent[cur] = spent.get(cur, 0) + amount
     cost_text = format_totals(spent) if known else '尚未取得完整花費'
-    st.markdown('<div class="mori-account-combined"><strong>雙平台合計</strong><div><span>專案總預算</span><b>' + html.escape(budget_text) +
+    st.markdown('<div class="mori-account-combined"><strong>雙平台合計</strong><div><span>累積預算</span><b>' + html.escape(budget_text) +
                 '</b><small>' + f"待補發票：{budget['missing_projects']} 個專案・{len(budget['pending'])} 個平台計畫" +
                 '</small></div><div><span>累計花費</span><b>' + html.escape(cost_text) + '</b><small>完整廣告帳號・依上方統計期間</small></div></div>', unsafe_allow_html=True)
     if budget['unset']:
@@ -86,7 +86,7 @@ def render_account_totals(settings, fetch):
                 pending_count = len({r['project_key'] for r in planning['pending']})
                 st.caption(f"{value['accounts']} 個廣告帳號｜{planning['plans']} 個平台計畫")
                 a, b = st.columns(2)
-                a.metric('專案總預算', format_totals(planning['totals'], compact=True) if planning['plans'] else '尚未建立預算')
+                a.metric('累積預算', format_totals(planning['totals'], compact=True) if planning['plans'] else '尚未建立預算')
                 b.metric('累計花費', format_totals(value['spent'], compact=True) if value['spent'] is not None else '—')
                 a.caption(f"待補發票：{pending_count} 個專案・{len(planning['pending'])} 個平台計畫")
                 b.caption('完整帳號 API 花費・含今日已回報數據')
