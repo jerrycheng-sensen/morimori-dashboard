@@ -43,14 +43,14 @@ def render_account_totals(settings, fetch, project_fetch=None):
     today = datetime.now(TAIPEI).date()
     suggested = default_since(settings, today)
     st.markdown('<div class="mori-account-title">雙平台預算總覽</div>', unsafe_allow_html=True)
-    with st.expander('帳號對帳期間與計算說明'):
-        custom = st.checkbox('自行指定統計起日', key='account_totals_custom_since')
-        since = st.date_input('帳號總覽統計起日', suggested, max_value=today, key='account_totals_since') if custom else suggested
-        st.caption('預設從最早的平台計畫開始日或發票儲值登錄日（含作廢歷史）起算，至今日；不是帳號成立以來的歷史總額。')
-        st.caption('累計預算＝所有已建立平台計畫的調整後預算，含準備中與已結案，不受本區花費起日篩選。內部轉移只改分配，雙平台合計不會重複增加。')
-        st.caption('主區三項指標採同一批專案：累計花費按各專案廣告走期認列；剩餘預算＝累計預算－累計花費。完整帳號花費另列於下方對帳明細，才使用這裡的統計起日；不混入專案剩餘預算。')
+    with st.expander('檢查是否有廣告花費漏列專案'):
+        st.caption('用來核對：有沒有廣告已經花錢，卻還沒加入專案。可查看下方各平台的「帳號全部花費」，再與廣告後台核對；目前不會自動列出漏列的廣告。')
+        custom = st.checkbox('改選查詢開始日', key='account_totals_custom_since')
+        since = st.date_input('查詢開始日', suggested, max_value=today, key='account_totals_since') if custom else suggested
+        st.caption(f'查詢期間：{since} ～ {today}。與廣告後台核對時，請選相同日期。')
+        st.caption('預設從系統最早的廣告計畫或發票紀錄查到今天。這裡的日期只影響帳號查詢，不會改變專案的預算、花費與剩餘金額。')
     manual = st.button('重新讀取全部預算', key='account_totals_reload', disabled=not bool(settings['accounts']),
-                       help='更新上方帳號總花費；預算總覽也會更新各專案。平常切換專案不重抓資料。')
+                       help='取得各專案與廣告帳號最新回報的花費，包含今天。')
     key = view_key(settings, since, today)
     view = st.session_state.get('budget_account_view', {})
     if fetch is not None and (manual or view.get('key') != key):
@@ -104,9 +104,9 @@ def render_account_totals(settings, fetch, project_fetch=None):
                         st.caption('預算：' + format_totals(planning['totals']))
                     if len(project['spent'] or {}) > 1:
                         st.caption('專案花費：' + format_totals(project['spent']))
-                    with st.expander('完整帳號花費（供對帳）'):
-                        st.write('帳號花費：' + (format_totals(value['spent']) if value['spent'] is not None else '尚未完整取得'))
-                        st.caption(f'{since} ～ {today}｜帳號資料讀取 {stamp}（台灣時間）；包含未建立為專案的廣告，不計入上方專案剩餘預算。')
+                    with st.expander('查看帳號全部花費'):
+                        st.write('帳號全部花費：' + (format_totals(value['spent']) if value['spent'] is not None else '尚未完整取得'))
+                        st.caption(f'{since} ～ {today}｜帳號資料讀取 {stamp}（台灣時間）；包含還沒加入專案的廣告；只供核對，不影響上方剩餘預算。')
                     if not value['accounts']:
                         st.caption('尚未新增此平台的廣告帳號。')
                     for error in value['errors']:
