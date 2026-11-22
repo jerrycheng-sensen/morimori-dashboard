@@ -1,8 +1,19 @@
 from pathlib import Path
+import re
+import html
 
 from streamlit.testing.v1 import AppTest
 
 APP = str(Path(__file__).parents[1] / "app.py")
+
+
+def displayed_money(app, label):
+    values = []
+    for element in app.markdown:
+        for article in re.findall(r'<article class="mori-money-metric".*?</article>', element.value):
+            if f'data-money-label="{label}"' in article:
+                values.append(html.unescape(re.sub('<[^>]+>', '', article)))
+    return values
 
 
 def test_live_app_without_password_opens_dashboard(monkeypatch):
@@ -177,10 +188,10 @@ def test_budget_transfer_ui_posts_once_and_updates_both_cards(monkeypatch):
     assert len(updated['budget_transactions']) == 1, [x.value for x in app.error]
     assert balance(updated,'a')['adjusted'] == 23614
     assert balance(updated,'b')['adjusted'] == 92386
-    assert any('來源案' in x.value.to_string() and '接收案' in x.value.to_string() for x in app.dataframe)
+    assert any('來源案' in x.value and '接收案' in x.value and '36,386' in x.value for x in app.markdown)
     assert app.session_state['budget_view']['results']['a']['spend'] == 1200
     app.button(key='budget_nav_overview').click().run()
-    assert any(x.label == '可用預算' and x.value == '92,386.00' for x in app.metric)
+    assert '可用預算92,386' in displayed_money(app, '可用預算')
     app.button(key='budget_nav_edit').click().run()
     assert next(x for x in app.number_input if x.label.startswith('平台投放預算')).disabled is False  # new-plan editor
     # Reversal appends a second record and returns both balances.
@@ -217,7 +228,7 @@ def test_budget_initial_load_only_until_manual_read_even_after_navigation_or_ela
     app.sidebar.radio[0].set_value('專案預算').run()
     assert not app.exception and len(calls) == 1
     assert app.session_state['budget_view']['results']['p']['spend'] == 1200
-    assert any(x.label == '累計花費' and x.value == '1,200.00' for x in app.metric)
+    assert '累計花費1,200' in displayed_money(app, '累計花費')
     # Fragment-only filters must not read the API on every click.
     app.selectbox(key='budget_state_filter').set_value('進行中').run()
     assert not app.exception and len(calls) == 1
@@ -291,7 +302,7 @@ def test_invoice_page_requires_attachment_and_void_updates_only_platform_status(
     view = app.session_state['budget_view']
     app.button(key='budget_nav_invoices').click().run()
     assert not app.exception
-    assert len(app.dataframe[0].value) == 2
+    assert any('<tbody>' in x.value and x.value.count('<tr>') == 3 and 'Meta' in x.value and 'Google Ads' in x.value for x in app.markdown)
     app.selectbox(key='invoice_plan').set_value('g').run()
     next(b for b in app.button if b.label == '儲存發票與儲值紀錄').click().run()
     assert any('請先上傳發票' in e.value for e in app.error)
@@ -371,12 +382,12 @@ def test_header_totals_stay_visible_across_tabs_and_reuse_account_reads(monkeypa
     for tab in ['budget_nav_invoices','budget_nav_edit','budget_nav_overview']:
         app.button(key=tab).click().run()
         assert not app.exception
-        assert any(x.label == '累計花費' for x in app.metric)
+        assert displayed_money(app, '累計花費')
     app.text_input(key='budget_nav_search').set_value('找不到').run()
     assert app.session_state['budget_account_view'] == initial and len(calls) == 1
     app.button(key='account_totals_reload').click().run()
     assert not app.exception and len(calls) == 2
-    assert any(x.label == '累計預算' and '100.00' in x.value for x in app.metric)
+    assert '累計預算TWD 100' in displayed_money(app, '累計預算')
     app.button(key='pending_invoice_m').click().run()
     assert not app.exception and app.session_state['budget_section'] == 'invoices'
     assert app.selectbox(key='invoice_plan').value == 'm' and len(calls) == 2

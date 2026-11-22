@@ -13,6 +13,7 @@ import streamlit as st
 from mori.budgets import (collect_spend, configuration_key, plan_summary, save_group,
                           save_plan, time_progress, group_summary, refresh_due, period_state, advertising_state)
 from mori.core import AppError, TAIPEI
+from mori.money_display import money_text, money_metric, money_note, money_table, plan_platform
 from mori.budget_ledger import balance, impacts
 from mori.budget_visuals import platform_brand, budget_progress
 from mori.budget_ledger_ui import records, render_ledger
@@ -149,6 +150,17 @@ BUDGET_STYLES = """<style>
 .mori-budget-utilisation.pending strong{font-size:15px;color:#697467;}
 @media(max-width:700px){.st-key-budget_summary_panel{padding:18px!important;}.st-key-budget_summary_meta,.st-key-budget_summary_google{padding:16px!important;}.mori-budget-utilisation{padding:14px;}.mori-platform-brand{font-size:22px!important;}}
 
+
+.mori-money-fraction{font-size:.58em!important;font-weight:500!important;opacity:.6;letter-spacing:0;white-space:nowrap;}
+.mori-money-metric{padding:20px 18px;border:1px solid #dedbd4;border-radius:14px;background:#fffefa;min-width:0;}
+.mori-money-label{font-size:15px;color:#5c6b5f;margin-bottom:10px;}
+.mori-money-value{font-size:clamp(24px,2.15vw,32px);font-weight:750;line-height:1.35;color:#17421E;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.mori-money-note{font-size:14px!important;line-height:1.8;color:#718075;margin:8px 0;}
+.mori-money-table{overflow:auto;max-height:480px;border:1px solid #dedbd4;border-radius:12px;margin:12px 0;}
+.mori-money-table table{border-collapse:collapse;width:100%;font-size:14px;font-variant-numeric:tabular-nums;}
+.mori-money-table th{background:#f0eee8;color:#17421E;position:sticky;top:0;z-index:1;text-align:left;}
+.mori-money-table th,.mori-money-table td{padding:12px 14px;border-bottom:1px solid #e8e5de;white-space:nowrap;}
+.mori-money-table tr:nth-child(even){background:#faf9f6;}
 </style>"""
 
 
@@ -286,7 +298,7 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
                     ad_start = a.date_input('廣告開始日（可含預熱）', date.fromisoformat(plan['start']) if plan else today)
                     ad_end = b.date_input('廣告結束日', date.fromisoformat(plan['end']) if plan else today)
                     locked_budget = any(plan.get('id') in impacts(t) for t in settings.get('budget_transactions', []))
-                    budget = st.number_input('平台投放預算（與廣告帳號同幣別，不另加稅／服務費）', min_value=0., value=float(plan.get('budget', 0)), step=1000., disabled=locked_budget)
+                    budget = st.number_input('平台投放預算（與廣告帳號同幣別，不另加稅／服務費）', min_value=0., value=float(plan.get('budget', 0)), step=1000., format='%.2f' if google_plan else '%.0f', disabled=locked_budget)
                     if locked_budget:
                         st.caption('已有異動紀錄，原始預算已保留；請到「預算調動與紀錄」辦理追加／減列。')
                     st.caption('0 代表預算尚未設定，總覽會顯示「未設定」，不會計算花費百分比。')
@@ -343,11 +355,11 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
                             if preview.get('not_started'):
                                 st.info('廣告尚未開始，尚無可預覽的資料。')
                             else:
-                                st.success(f"預覽花費 {preview['currency']} {preview['spend']:,.2f}；尚未儲存設定。")
+                                money_note(st, f"預覽花費 {preview['currency']} {money_text(preview['spend'], accounts[account_key]['platform'])}；尚未儲存設定。")
                                 for warning in preview.get('warnings', []):
                                     st.warning(warning)
                                 if preview['rows']:
-                                    st.dataframe(pd.DataFrame(preview['rows']), hide_index=True, width='stretch')
+                                    money_table(st, pd.DataFrame(preview['rows']), [accounts[account_key]['platform']] * len(preview['rows']), {'spend', 'spend_raw'})
                                 else:
                                     st.info('沒有符合條件的廣告，請檢查走期與文字。')
                         except (AppError, ValueError) as exc:
@@ -534,11 +546,11 @@ def render_budget_results(settings, fetch, entries):
 def render_group_totals(plans, results, today, settings):
     data = group_summary(plans, results, today, settings)
     a, b, c, d = st.columns(4)
-    money = lambda v: f'{v:,.2f}' if v is not None else '—'
-    a.metric('累計預算', money(data['budget']))
-    b.metric('累計總花費', money(data['spend']))
-    c.metric('專案超支' if data['remaining'] is not None and data['remaining'] < 0 else '專案結餘',
-             money(abs(data['remaining'])) if data['remaining'] is not None else '—')
+    platform = 'meta' if all(plan_platform(settings, p['id']) == 'meta' for p in plans) else 'combined'
+    money_metric(a, '累計預算', data['budget'], platform)
+    money_metric(b, '累計花費', data['spend'], platform)
+    money_metric(c, '專案超支' if data['remaining'] is not None and data['remaining'] < 0 else '專案結餘',
+             abs(data['remaining']) if data['remaining'] is not None else None, platform)
     d.metric('整體花費進度', f"{data['ratio']:.1%}" if data['ratio'] is not None else '—')
     st.markdown(budget_progress(data['ratio']), unsafe_allow_html=True)
     if data['reason']:
@@ -567,7 +579,7 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
             st.warning('發票登錄幣別與平台回報不一致，請至「儲值與發票」核對；不同幣別不相加。')
         elif data['budget'] > 0:
             registered = proof['totals'][data['currency']]
-            st.caption(f"發票認列／可用預算：{data['currency']} {registered:,.2f}／{data['budget']:,.2f}；有發票不代表全額到位。")
+            money_note(st, f"發票認列／可用預算：{data['currency']} {money_text(registered, account['platform'])}／{money_text(data['budget'], account['platform'])}；有發票不代表全額到位。")
     if not plan.get('group_id'):
         st.caption('平台計畫：' + plan['name'])
     warnings = (result or {}).get('warnings', [])
@@ -584,10 +596,10 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
     else:
         a, b, c, d = st.columns(4)
     initialized = funds['original'] > 0 or any(plan['id'] in impacts(t) for t in settings.get('budget_transactions', []))
-    a.metric('可用預算', f"{data['budget']:,.2f}" if initialized else '未設定')
-    b.metric('累計花費', f"{data['spend']:,.2f}" if data['spend'] is not None else '—')
-    c.metric('超支金額' if data['remaining'] is not None and data['remaining'] < 0 else '剩餘預算',
-             f"{abs(data['remaining']):,.2f}" if data['remaining'] is not None and initialized else '—')
+    money_metric(a, '可用預算', data['budget'] if initialized else None, account['platform'], empty='未設定')
+    money_metric(b, '累計花費', data['spend'], account['platform'])
+    money_metric(c, '超支金額' if data['remaining'] is not None and data['remaining'] < 0 else '剩餘預算',
+             abs(data['remaining']) if data['remaining'] is not None and initialized else None, account['platform'])
     d.metric('花費進度', f"{data['ratio']:.1%}" if data['ratio'] is not None else '—')
     st.markdown(budget_progress(data['ratio']), unsafe_allow_html=True)
     if data['ratio'] is not None:
@@ -598,9 +610,9 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
     history = records(settings, plan['id'])
     st.markdown('<div class="mori-budget-divider subtle" role="separator"></div>', unsafe_allow_html=True)
     with st.expander('預算組成與調動紀錄'):
-        st.caption(f"原始 {funds['original']:,.2f} ＋ 轉入 {funds['incoming']:,.2f} － 轉出 {funds['outgoing']:,.2f} ＋ 追加／減列 {funds['adjustment']:,.2f} ＝ 可用 {funds['adjusted']:,.2f}")
+        money_note(st, f"原始 {money_text(funds['original'], account['platform'])} ＋ 轉入 {money_text(funds['incoming'], account['platform'])} － 轉出 {money_text(funds['outgoing'], account['platform'])} ＋ 追加／減列 {money_text(funds['adjustment'], account['platform'])} ＝ 可用 {money_text(funds['adjusted'], account['platform'])}")
         if not history.empty:
-            st.dataframe(history, hide_index=True, width='stretch')
+            money_table(st, history, [account['platform']] * len(history), {'金額', '本計畫增減'})
         else:
             st.caption('尚無預算異動。')
     detail_title = '認列說明與廣告明細' + (f'（{len(warnings)} 項提醒）' if warnings else '')
@@ -612,13 +624,13 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
             st.caption(f"{data['currency'] or '帳號幣別'}｜資料 {result['since']} ～ {result['until']}｜時區 {result.get('timezone') or '未回傳'}")
             rows = result['rows']
             if result.get('spend_basis') == 'meta_ad_whole_period':
-                st.caption(f"核對口徑：每則廣告的整段走期花費｜{len(rows)} 則廣告｜加總 {result['currency']} {result['spend_raw']}。未先將每日金額取整。")
+                st.caption(f"核對口徑：每則廣告的整段走期花費｜{len(rows)} 則廣告｜加總 {result['currency']} {money_text(result['spend_raw'], account['platform'])}。計算保留 API 原始精度，下載明細可核對。")
             if rows:
                 df = pd.DataFrame(rows)
                 columns = [k for k in ['date', 'date_stop', 'channel', 'ad_type', 'attribution_unit', 'campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'ad_id', 'ad_name', 'asset_group_name', 'asset_group_id', 'headlines', 'descriptions', 'paths', 'spend_raw', 'spend', 'currency'] if k in df]
                 detail = df[columns].rename(columns={'date': '資料開始日' if result.get('spend_basis') == 'meta_ad_whole_period' else '日期', 'date_stop': '資料結束日', 'campaign_id': '活動 ID', 'adset_id': '群組 ID', 'campaign_name': '廣告活動' if account['platform'] == 'google' else '行銷活動', 'adset_name': '廣告群組' if account['platform'] == 'google' else '廣告組合',
                                                         'ad_name': '廣告', 'asset_group_name': '素材群組', 'asset_group_id': '素材群組 ID', 'ad_type': '廣告格式', 'attribution_unit': '花費認列單位', 'channel': '類型', 'ad_id': '廣告 ID', 'headlines': '目前標題', 'descriptions': '目前說明', 'paths': '目前路徑', 'spend_raw': 'API 原始花費', 'spend': '花費', 'currency': '幣別'})
-                st.dataframe(detail, hide_index=True, width='stretch')
+                money_table(st, detail, [account['platform']] * len(detail), {'花費', 'API 原始花費'})
                 # Neutralize formula-leading text before opening an exported CSV in Excel.
                 export = detail.map(lambda v: "'" + v if isinstance(v, str) and v.lstrip().startswith(('=', '+', '-', '@')) else v)
                 st.download_button('下載花費核對明細 CSV', export.to_csv(index=False).encode('utf-8-sig'),

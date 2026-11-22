@@ -8,6 +8,7 @@ import streamlit as st
 from mori.budget_ledger import adjustment, balance, plan_label, reverse, transfer
 from mori.budgets import collect_spend, configuration_key
 from mori.core import AppError, TAIPEI
+from mori.money_display import money_metric, money_text, money_table, plan_platform
 
 
 def records(settings, plan_id=None):
@@ -49,6 +50,10 @@ def render_ledger(settings, fetch, persist):
     kind = st.radio('異動方式', ['轉移預算', '追加／減列', '沖回紀錄'], horizontal=True, key='budget_tx_kind')
     label = lambda key: plan_label(settings, key)
     source_id = target_id = entry_id = None
+    def transaction_platform(t):
+        ids = [t.get('source_id'), t.get('target_id')]
+        platforms = [plan_platform(settings, pid) for pid in ids if pid]
+        return 'meta' if platforms and all(p == 'meta' for p in platforms) else 'combined'
     if kind == '轉移預算':
         if len(plans) < 2:
             st.info('轉移至少需要兩個平台計畫。')
@@ -57,8 +62,8 @@ def render_ledger(settings, fetch, persist):
             source_id = c1.selectbox('從哪個專案／平台轉出', list(plans), format_func=label, key='budget_tx_source')
             target_id = c2.selectbox('轉入哪個專案／平台', [k for k in plans if k != source_id], format_func=label, key='budget_tx_target')
             a, b = st.columns(2)
-            a.metric('來源調整後預算', f"{balance(settings, source_id)['adjusted']:,.2f}")
-            b.metric('接收調整後預算', f"{balance(settings, target_id)['adjusted']:,.2f}")
+            money_metric(a, '來源調整後預算', balance(settings, source_id)['adjusted'], plan_platform(settings, source_id))
+            money_metric(b, '接收調整後預算', balance(settings, target_id)['adjusted'], plan_platform(settings, target_id))
     elif kind == '追加／減列':
         target_id = st.selectbox('異動的專案／平台', list(plans), format_func=label, key='budget_adjust_target')
     else:
@@ -67,7 +72,7 @@ def render_ledger(settings, fetch, persist):
         if options:
             def entry_label(key):
                 t = next(t for t in entries if t['id'] == key)
-                return f"{t['effective_on']}｜{t.get('source_label', '')} → {t.get('target_label', '')}｜{t['currency']} {t['amount']:,.2f}｜{t['reason']}"
+                return f"{t['effective_on']}｜{t.get('source_label', '')} → {t.get('target_label', '')}｜{t['currency']} {money_text(t['amount'], transaction_platform(t))}｜{t['reason']}"
             entry_id = st.selectbox('選擇要沖回的原紀錄', options, format_func=entry_label, key='budget_reverse_entry')
         else:
             st.info('目前沒有可沖回的異動。')
@@ -75,7 +80,7 @@ def render_ledger(settings, fetch, persist):
     if ready:
         with st.form('budget_transaction_' + kind):
             amount = st.number_input('異動金額（追加為正、減列為負）' if kind == '追加／減列' else '轉移金額',
-                                     min_value=None if kind == '追加／減列' else 0., value=0., step=100., format='%.2f') if kind != '沖回紀錄' else None
+                                     min_value=None if kind == '追加／減列' else 0., value=0., step=100., format='%.0f' if all(plan_platform(settings, pid) == 'meta' for pid in [source_id, target_id] if pid) else '%.2f') if kind != '沖回紀錄' else None
             effective = st.date_input('生效日期', today, max_value=today) if kind != '沖回紀錄' else today
             reason = st.text_input('異動原因／用途', placeholder='例如：林口結餘轉供感謝祭北部加強')
             confirmed = st.checkbox('已核對相關專案的廣告歸類；確認儲存這筆預算異動')
@@ -113,6 +118,6 @@ def render_ledger(settings, fetch, persist):
     if df.empty:
         st.info('尚無預算異動紀錄。')
     else:
-        st.dataframe(df, hide_index=True, width='stretch')
+        money_table(st, df, [plan_platform(settings, selected) if selected != 'all' else transaction_platform(next(t for t in entries if t['id'] == row['異動編號'])) for _, row in df.iterrows()], {'金額', '本計畫增減'})
         st.download_button('下載預算異動紀錄 CSV', df.to_csv(index=False).encode('utf-8-sig'),
                            'mori-budget-ledger.csv', on_click='ignore')

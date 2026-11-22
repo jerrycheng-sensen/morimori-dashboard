@@ -6,6 +6,7 @@ import streamlit as st
 
 from mori.account_funding import default_since, view_key, collect_accounts, summary_totals, project_kpis
 from mori.core import TAIPEI
+from mori.money_display import money_text, money_html, money_metric, money_note
 from mori.budget_visuals import platform_brand, totals_progress
 
 
@@ -16,12 +17,12 @@ def open_invoices(plan_id=None):
     st.rerun()
 
 
-def format_totals(values, compact=False):
+def format_totals(values, compact=False, platform='combined'):
     if not values:
         return '—'
     if compact and len(values) > 1:
         return '分幣別列示'
-    return '；'.join((f'{cur} {amount:,.2f}' if not cur.startswith('?') else f'{amount:,.2f}（帳號幣別待確認）')
+    return '；'.join((f'{cur} {money_text(amount, platform)}' if not cur.startswith('?') else f'{money_text(amount, platform)}（帳號幣別待確認）')
                     for cur, amount in sorted(values.items()))
 
 
@@ -34,7 +35,7 @@ def kpi_card(label, values, note, kind):
         numbers = '<strong class="mori-kpi-empty">尚未建立</strong>'
     else:
         numbers = ''.join('<div class="mori-kpi-number"><small>' + html.escape(cur if not cur.startswith('?') else '幣別待確認') +
-                          '</small><strong>' + f'{amount:,.2f}' + '</strong></div>' for cur, amount in sorted(values.items()))
+                          '</small><strong>' + money_html(amount) + '</strong></div>' for cur, amount in sorted(values.items()))
     return '<article class="mori-kpi-card ' + kind + state + '"><h3>' + label + '</h3>' + numbers + '<p>' + note + '</p></article>'
 
 
@@ -94,18 +95,24 @@ def render_account_totals(settings, fetch, project_fetch=None):
                     st.caption(f"{value['accounts']} 個廣告帳號｜{planning['plans']} 個平台計畫")
                     project = kpis['platforms'][platform]
                     a, b = st.columns(2)
-                    a.metric('累計預算', format_totals(planning['totals'], compact=True) if planning['plans'] else '尚未建立預算')
-                    b.metric('累計花費', format_totals(project['spent'], compact=True) if project['spent'] is not None else '—')
-                    st.metric('剩餘預算', format_totals(project['remaining'], compact=True) if project['remaining'] is not None else '—')
+                    def metric(target, label, values, empty='—'):
+                        if values:
+                            for cur, amount in sorted(values.items()):
+                                money_metric(target, label, amount, platform, prefix=(cur + ' ') if not cur.startswith('?') else '')
+                        else:
+                            money_metric(target, label, None, platform, empty=empty)
+                    metric(a, '累計預算', planning['totals'], '尚未建立預算')
+                    metric(b, '累計花費', project['spent'])
+                    metric(st, '剩餘預算', project['remaining'])
                     st.markdown(totals_progress(project['budget'], project['spent'], project['remaining']), unsafe_allow_html=True)
                     a.caption(f"待補發票：{pending_count} 個專案・{len(planning['pending'])} 個平台計畫")
                     b.caption('專案認列花費・含今日已回報數據')
                     if len(planning['totals']) != 1:
-                        st.caption('預算：' + format_totals(planning['totals']))
+                        money_note(st, '預算：' + format_totals(planning['totals'], platform=platform))
                     if len(project['spent'] or {}) > 1:
-                        st.caption('專案花費：' + format_totals(project['spent']))
+                        money_note(st, '專案花費：' + format_totals(project['spent'], platform=platform))
                     with st.expander('查看帳號全部花費'):
-                        st.write('帳號全部花費：' + (format_totals(value['spent']) if value['spent'] is not None else '尚未完整取得'))
+                        money_note(st, '帳號全部花費：' + (format_totals(value['spent'], platform=platform) if value['spent'] is not None else '尚未完整取得'))
                         st.caption(f'{since} ～ {today}｜帳號資料讀取 {stamp}（台灣時間）；包含還沒加入專案的廣告；只供核對，不影響上方剩餘預算。')
                     if not value['accounts']:
                         st.caption('尚未新增此平台的廣告帳號。')
