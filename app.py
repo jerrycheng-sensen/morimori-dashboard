@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import sys
 import uuid
 from pathlib import Path
 import base64
@@ -13,6 +14,11 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 import requests
 import streamlit as st
+
+# Resolve local modules from the entry file even when the server changes cwd.
+_app_root = str(Path(__file__).resolve().parent)
+if _app_root not in sys.path:
+    sys.path.insert(0, _app_root)
 
 from mori.core import (AppError, LEVELS, TAIPEI, conversion_ready, default_settings,
                        rule_window, validate_settings)
@@ -82,7 +88,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.22.43")
+st.sidebar.caption("系統版本：2026.11.22.44")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 # First budget visit loads data. Navigation and filter changes reuse this
 # session snapshot; only the manual button requests another read.
