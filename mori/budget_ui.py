@@ -14,6 +14,7 @@ from mori.budgets import (collect_spend, configuration_key, plan_summary, save_g
                           save_plan, time_progress, group_summary, refresh_due, period_state, advertising_state)
 from mori.core import AppError, TAIPEI
 from mori.budget_ledger import balance, impacts
+from mori.budget_visuals import platform_brand, budget_progress
 from mori.budget_ledger_ui import records, render_ledger
 
 
@@ -127,6 +128,27 @@ BUDGET_STYLES = """<style>
 .mori-kpi-panel footer{margin-top:24px;padding-top:20px;border-top:1px solid #e0d8c9;font-size:14px;color:#697467;line-height:1.8;}
 @media(max-width:1100px){.mori-kpi-number strong{font-size:34px;}.mori-kpi-card{padding:22px 16px;}}
 @media(max-width:700px){.mori-kpi-panel{padding:20px;margin:20px 0 26px;}.mori-kpi-grid{grid-template-columns:1fr;gap:14px;}.mori-kpi-number strong{font-size:42px;}.mori-kpi-panel h2{font-size:25px!important;}.mori-kpi-panel>header{margin-bottom:20px;}}
+
+/* One financial envelope: aggregate above, platform comparison below. */
+.st-key-budget_summary_panel{padding:30px!important;border:1px solid #d6c6aa!important;border-radius:22px!important;background:#fffefa!important;box-shadow:0 12px 36px #2630240d;gap:24px;}
+.st-key-budget_summary_panel .mori-kpi-panel{padding:0;margin:0;border:0;border-radius:0;background:transparent;box-shadow:none;}
+.mori-summary-platform-label{border-top:1px solid #e0d8c9;padding-top:26px;margin-top:6px;color:#59665b;font-weight:700;font-size:17px;}
+.st-key-budget_summary_meta,.st-key-budget_summary_google{padding:22px!important;background:#f8f7f3!important;border:1px solid #dedbd4!important;border-radius:16px!important;}
+.mori-platform-brand{display:inline-flex;align-items:center;gap:13px;font-size:24px!important;font-weight:750;color:#17421E;line-height:1.4;}
+.mori-platform-brand img{object-fit:contain;flex-shrink:0;display:block;}
+.mori-budget-utilisation{margin:14px 0 8px;padding:18px 20px;border:1px solid #e4dfd4;border-radius:12px;background:#f6f4ee;}
+.mori-budget-utilisation-label{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;font-size:16px;color:#4d6050;}
+.mori-budget-utilisation strong{font-size:18px;color:#17421E;}
+.mori-budget-track{height:12px;border-radius:20px;background:#e4e2db;overflow:hidden;}
+.mori-budget-track>div{height:100%;background:#17421E;border-radius:20px;}
+.mori-budget-utilisation.near .mori-budget-track>div{background:#a78343;}
+.mori-budget-utilisation.over{background:#fff4f1;border-color:#e6b9b1;}
+.mori-budget-utilisation.over strong{color:#b2372c;}
+.mori-budget-utilisation.over .mori-budget-track>div{background:#c34236;}
+.mori-budget-utilisation.pending{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;color:#697467;}
+.mori-budget-utilisation.pending strong{font-size:15px;color:#697467;}
+@media(max-width:700px){.st-key-budget_summary_panel{padding:18px!important;}.st-key-budget_summary_meta,.st-key-budget_summary_google{padding:16px!important;}.mori-budget-utilisation{padding:14px;}.mori-platform-brand{font-size:22px!important;}}
+
 </style>"""
 
 
@@ -518,6 +540,7 @@ def render_group_totals(plans, results, today, settings):
     c.metric('專案超支' if data['remaining'] is not None and data['remaining'] < 0 else '專案結餘',
              money(abs(data['remaining'])) if data['remaining'] is not None else '—')
     d.metric('整體花費進度', f"{data['ratio']:.1%}" if data['ratio'] is not None else '—')
+    st.markdown(budget_progress(data['ratio']), unsafe_allow_html=True)
     if data['reason']:
         st.caption(data['reason'])
     else:
@@ -531,7 +554,7 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
     from mori.invoice_ui import funding_badge, proof_caption
     # Project title belongs to the outer envelope; plan name stays in the details.
     phase = period_state(plan['start'], plan['end'], today, plan.get('status') == '已結案')
-    st.markdown(f'<div class="mori-platform-heading"><span>{platform}</span>{status_badge("投放", phase)}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="mori-platform-heading">{platform_brand(account["platform"])}{status_badge("投放", phase)}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="mori-ad-dates">廣告走期　{html.escape(plan["start"])} ～ {html.escape(plan["end"])}</div>', unsafe_allow_html=True)
     if (result or {}).get('includes_today'):
         st.caption('即時數據・含今日未完整花費，平台可能延遲回報或回補。')
@@ -566,11 +589,9 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
     c.metric('超支金額' if data['remaining'] is not None and data['remaining'] < 0 else '剩餘預算',
              f"{abs(data['remaining']):,.2f}" if data['remaining'] is not None and initialized else '—')
     d.metric('花費進度', f"{data['ratio']:.1%}" if data['ratio'] is not None else '—')
+    st.markdown(budget_progress(data['ratio']), unsafe_allow_html=True)
     if data['ratio'] is not None:
         ratio = data['ratio']
-        color = '#c34236' if ratio > 1 else '#17421E'
-        st.markdown(f'<div style="height:8px;background:#e2e9df;border-radius:10px;margin:12px 0 8px" role="img" aria-label="花費進度 {ratio:.1%}">'
-                    f'<div style="width:{max(0,min(100,ratio*100)):.3f}%;height:100%;background:{color};border-radius:10px"></div></div>', unsafe_allow_html=True)
         st.caption(f'花費 {ratio:.1%}・廣告走期進度 {data["time_ratio"]:.0%}（含資料日）')
         if ratio > 1:
             st.warning('已超過此平台預算。')
