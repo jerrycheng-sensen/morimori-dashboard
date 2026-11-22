@@ -376,7 +376,7 @@ def test_header_totals_stay_visible_across_tabs_and_reuse_account_reads(monkeypa
     assert app.session_state['budget_account_view'] == initial and len(calls) == 1
     app.button(key='account_totals_reload').click().run()
     assert not app.exception and len(calls) == 2
-    assert any(x.label == '累積預算' and '100.00' in x.value for x in app.metric)
+    assert any(x.label == '累計預算' and '100.00' in x.value for x in app.metric)
     app.button(key='pending_invoice_m').click().run()
     assert not app.exception and app.session_state['budget_section'] == 'invoices'
     assert app.selectbox(key='invoice_plan').value == 'm' and len(calls) == 2

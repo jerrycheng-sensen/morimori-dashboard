@@ -4,7 +4,7 @@ import html
 
 import streamlit as st
 
-from mori.account_funding import default_since, view_key, collect_accounts, summary_totals, project_budget_totals
+from mori.account_funding import default_since, view_key, collect_accounts, summary_totals, project_kpis
 from mori.core import TAIPEI
 
 
@@ -24,17 +24,30 @@ def format_totals(values, compact=False):
                     for cur, amount in sorted(values.items()))
 
 
+def kpi_card(label, values, note, kind):
+    deficit = kind == 'remaining' and values is not None and any(v < 0 for v in values.values())
+    state = ' deficit' if deficit else ''
+    if values is None:
+        numbers = '<strong class="mori-kpi-empty">待資料完整</strong>'
+    elif not values:
+        numbers = '<strong class="mori-kpi-empty">尚未建立</strong>'
+    else:
+        numbers = ''.join('<div class="mori-kpi-number"><small>' + html.escape(cur if not cur.startswith('?') else '幣別待確認') +
+                          '</small><strong>' + f'{amount:,.2f}' + '</strong></div>' for cur, amount in sorted(values.items()))
+    return '<article class="mori-kpi-card ' + kind + state + '"><h3>' + label + '</h3>' + numbers + '<p>' + note + '</p></article>'
+
+
 @st.fragment
-def render_account_totals(settings, fetch):
+def render_account_totals(settings, fetch, project_fetch=None):
     today = datetime.now(TAIPEI).date()
     suggested = default_since(settings, today)
     st.markdown('<div class="mori-account-title">雙平台預算總覽</div>', unsafe_allow_html=True)
-    with st.expander('統計期間與計算說明'):
+    with st.expander('帳號對帳期間與計算說明'):
         custom = st.checkbox('自行指定統計起日', key='account_totals_custom_since')
         since = st.date_input('帳號總覽統計起日', suggested, max_value=today, key='account_totals_since') if custom else suggested
         st.caption('預設從最早的平台計畫開始日或發票儲值登錄日（含作廢歷史）起算，至今日；不是帳號成立以來的歷史總額。')
-        st.caption('累積預算＝所有已建立平台計畫的調整後預算，含準備中與已結案，不受本區花費起日篩選。內部轉移只改分配，雙平台合計不會重複增加。')
-        st.caption('累計花費＝上述期間的完整帳號花費，可能包含未建立專案的廣告；與累積預算的範圍不同，不直接相減作為餘額。發票驗收獨立追蹤，不影響預算金額，也不代表平台錢包餘額。')
+        st.caption('累計預算＝所有已建立平台計畫的調整後預算，含準備中與已結案，不受本區花費起日篩選。內部轉移只改分配，雙平台合計不會重複增加。')
+        st.caption('主區三項指標採同一批專案：累計花費按各專案廣告走期認列；剩餘預算＝累計預算－累計花費。完整帳號花費另列於下方對帳明細，才使用這裡的統計起日；不混入專案剩餘預算。')
     manual = st.button('重新讀取全部預算', key='account_totals_reload', disabled=not bool(settings['accounts']),
                        help='更新上方帳號總花費；預算總覽也會更新各專案。平常切換專案不重抓資料。')
     key = view_key(settings, since, today)
@@ -46,23 +59,25 @@ def render_account_totals(settings, fetch):
         st.session_state.budget_account_view = view
     reports = view.get('results', {}) if view.get('key') == key else {}
     platforms, _ = summary_totals(settings, reports, since, today)
-    budget = project_budget_totals(settings, reports, today)
+    from mori.budget_ui import load_budget_view
+    project_view = load_budget_view(settings, project_fetch, force=manual) if project_fetch is not None else {}
+    kpis = project_kpis(settings, (project_view or {}).get('results', {}), reports, today)
+    budget = kpis['planning']
     stamp = datetime.fromisoformat(view['at']).strftime('%Y/%m/%d %H:%M') if view.get('at') and view.get('key') == key else '尚未讀取'
-    st.caption(f'帳號統計期間 {since} ～ {today}｜資料讀取時間 {stamp}（台灣時間）｜依帳號時區、含今日已回報花費；平台可能延遲或回補')
-    budget_text = format_totals(budget['totals']) if budget['plans'] else '尚未建立預算'
-    if budget['plans'] and budget['unset'] == budget['plans']:
-        budget_text = '尚未設定預算'
-    existing = [p for p in platforms.values() if p['accounts']]
-    spent = {}
-    known = bool(existing) and all(p['spent'] is not None for p in existing)
-    if known:
-        for value in existing:
-            for cur, amount in value['spent'].items():
-                spent[cur] = spent.get(cur, 0) + amount
-    cost_text = format_totals(spent) if known else '尚未取得完整花費'
-    st.markdown('<div class="mori-account-combined"><strong>雙平台合計</strong><div><span>累積預算</span><b>' + html.escape(budget_text) +
-                '</b><small>' + f"待補發票：{budget['missing_projects']} 個專案・{len(budget['pending'])} 個平台計畫" +
-                '</small></div><div><span>累計花費</span><b>' + html.escape(cost_text) + '</b><small>完整廣告帳號・依上方統計期間</small></div></div>', unsafe_allow_html=True)
+    total = kpis['combined']
+    counts = len({p.get('group_id') or 'plan:' + p['id'] for p in settings['projects']})
+    project_stamp = datetime.fromisoformat(project_view['at']).strftime('%Y/%m/%d %H:%M') if project_view and project_view.get('at') else '尚未讀取'
+    cards = kpi_card('累計預算', total['budget'], '已建立專案的調整後預算', 'budget')
+    cards += kpi_card('累計花費', total['spent'], '依同一批專案的廣告走期認列', 'spend')
+    cards += kpi_card('剩餘預算', total['remaining'], '累計預算 − 累計花費；負數表示超支', 'remaining')
+    st.markdown('<section class="mori-kpi-panel" aria-label="雙平台專案合計"><header><div><span class="mori-kpi-eyebrow">PROJECT BUDGET</span>'
+                '<h2>雙平台專案合計</h2></div><span class="mori-kpi-count">' + f'{counts} 個專案・{budget["plans"]} 個平台計畫' +
+                '</span></header><div class="mori-kpi-grid">' + cards + '</div><footer>' +
+                f'專案資料讀取 {project_stamp}（台灣時間）｜待補發票：{budget["missing_projects"]} 個專案・{len(budget["pending"])} 個平台計畫' +
+                '</footer></section>', unsafe_allow_html=True)
+    for value in kpis['platforms'].values():
+        for error in value['errors']:
+            st.warning(error)
     if budget['unset']:
         st.caption(f"另有 {budget['unset']} 個平台計畫尚未設定預算，請到新增／編輯設定補齊。")
     if st.button('登錄／管理發票', key='account_totals_invoices', icon=':material/receipt_long:', type='primary'):
@@ -85,20 +100,24 @@ def render_account_totals(settings, fetch):
                 st.subheader('Meta' if platform == 'meta' else 'Google Ads')
                 pending_count = len({r['project_key'] for r in planning['pending']})
                 st.caption(f"{value['accounts']} 個廣告帳號｜{planning['plans']} 個平台計畫")
+                project = kpis['platforms'][platform]
                 a, b = st.columns(2)
-                a.metric('累積預算', format_totals(planning['totals'], compact=True) if planning['plans'] else '尚未建立預算')
-                b.metric('累計花費', format_totals(value['spent'], compact=True) if value['spent'] is not None else '—')
+                a.metric('累計預算', format_totals(planning['totals'], compact=True) if planning['plans'] else '尚未建立預算')
+                b.metric('累計花費', format_totals(project['spent'], compact=True) if project['spent'] is not None else '—')
+                st.metric('剩餘預算', format_totals(project['remaining'], compact=True) if project['remaining'] is not None else '—')
                 a.caption(f"待補發票：{pending_count} 個專案・{len(planning['pending'])} 個平台計畫")
-                b.caption('完整帳號 API 花費・含今日已回報數據')
+                b.caption('專案認列花費・含今日已回報數據')
                 if len(planning['totals']) != 1:
                     st.caption('預算：' + format_totals(planning['totals']))
-                if len(value['spent'] or {}) > 1:
-                    st.caption('花費：' + format_totals(value['spent']))
+                if len(project['spent'] or {}) > 1:
+                    st.caption('專案花費：' + format_totals(project['spent']))
+                with st.expander('完整帳號花費（供對帳）'):
+                    st.write('帳號花費：' + (format_totals(value['spent']) if value['spent'] is not None else '尚未完整取得'))
+                    st.caption(f'{since} ～ {today}｜帳號資料讀取 {stamp}（台灣時間）；包含未建立為專案的廣告，不計入上方專案剩餘預算。')
                 if not value['accounts']:
                     st.caption('尚未新增此平台的廣告帳號。')
                 for error in value['errors']:
                     st.warning(error)
-    st.caption('上方預算為全部已建立專案；花費為完整廣告帳號。不受下方年度、狀態、搜尋或單一專案選擇影響。')
+    st.caption('主區預算、花費與剩餘採同一批已建立專案，不受下方年度、狀態、搜尋影響；剩餘預算不等於平台錢包餘額。資料未完整、預算未設定或認列重疊時，暫不顯示剩餘金額。')
     if manual:
-        st.session_state.budget_refresh_requested = True
         st.rerun()

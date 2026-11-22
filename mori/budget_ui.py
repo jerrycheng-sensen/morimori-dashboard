@@ -109,6 +109,24 @@ BUDGET_STYLES = """<style>
 .mori-editor-context{border-color:#ded6c7;}
 .st-key-budget_settings_editor{gap:24px;}
 @media(max-width:700px){.mori-budget-divider{margin:24px 0;}.mori-budget-divider.subtle{margin:18px 0;}.st-key-budget_workspace [class*="st-key-budget_project_card_"]{padding:16px!important;margin-bottom:24px;}.st-key-budget_workspace [class*="st-key-budget_platform_"]{padding:14px!important;}.mori-budget-hero{padding:24px 20px;}.mori-project-heading{padding:20px;}}
+
+.mori-kpi-panel{position:relative;isolation:isolate;margin:24px 0 32px;padding:30px;border:1px solid #d6c6aa;border-radius:22px;background:linear-gradient(135deg,#fffefa,#f5f2eb);box-shadow:0 15px 40px #26302412,0 0 0 5px #fffaf080;}
+.mori-kpi-panel>header{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:26px;padding-bottom:22px;border-bottom:1px solid #e0d8c9;}
+.mori-kpi-eyebrow{display:block;font-size:12px;letter-spacing:.14em;font-weight:700;color:#8b734c;margin-bottom:7px;}
+.mori-kpi-panel h2{font-size:30px!important;color:#17421E;margin:0!important;padding:0!important;line-height:1.35;}
+.mori-kpi-count{padding:8px 13px;background:#f0ece3;border:1px solid #ded5c4;border-radius:20px;font-size:14px;color:#5a625b;}
+.mori-kpi-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;}
+.mori-kpi-card{padding:28px 22px;border-radius:16px;border:1px solid #ddd9d0;background:#fff;box-shadow:0 4px 15px #26302406;min-width:0;}
+.mori-kpi-card h3{font-size:20px!important;font-weight:700;color:#4c5f51;margin:0 0 18px;padding:0;}
+.mori-kpi-number small{display:block;font-size:14px;letter-spacing:.08em;color:#758073;margin-bottom:3px;}
+.mori-kpi-number strong{display:block;font-size:clamp(34px,3vw,54px);font-weight:850;line-height:1.2;letter-spacing:-.025em;font-variant-numeric:tabular-nums;color:#17421E;overflow-wrap:anywhere;}
+.mori-kpi-card .mori-kpi-empty{display:block;font-size:28px;line-height:1.5;color:#7a8078;}
+.mori-kpi-card p{font-size:14px;color:#697467;margin:20px 0 0;line-height:1.7;}
+.mori-kpi-card.remaining{border-color:#c7ad7e;background:linear-gradient(140deg,#fffdf8,#f2ebdc);}
+.mori-kpi-card.deficit{border-color:#d5aaa0;background:#fff7f4;}.mori-kpi-card.deficit .mori-kpi-number strong{color:#a33e2d;}
+.mori-kpi-panel footer{margin-top:24px;padding-top:20px;border-top:1px solid #e0d8c9;font-size:14px;color:#697467;line-height:1.8;}
+@media(max-width:1100px){.mori-kpi-number strong{font-size:34px;}.mori-kpi-card{padding:22px 16px;}}
+@media(max-width:700px){.mori-kpi-panel{padding:20px;margin:20px 0 26px;}.mori-kpi-grid{grid-template-columns:1fr;gap:14px;}.mori-kpi-number strong{font-size:42px;}.mori-kpi-panel h2{font-size:25px!important;}.mori-kpi-panel>header{margin-bottom:20px;}}
 </style>"""
 
 
@@ -165,7 +183,7 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
         plans = settings['projects']
         from mori.account_funding_ui import render_account_totals
         with st.container(key='budget_account_totals'):
-            render_account_totals(settings, account_fetch)
+            render_account_totals(settings, account_fetch, fetch)
         st.markdown('<div class="mori-budget-divider" role="separator"></div>', unsafe_allow_html=True)
         selected = st.session_state.setdefault('budget_section', 'overview')
         choices = [('overview', '預算總覽', ':material/dashboard:'),
@@ -395,16 +413,14 @@ def render_budget_overview(settings, fetch):
             render_budget_results(settings, fetch, entries)
 
 
-def render_budget_results(settings, fetch, entries):
-    today = datetime.now(TAIPEI).date()
-    groups = {g['id']: g for g in settings.get('project_groups', [])}
-    accounts = {a['key']: a for a in settings['accounts']}
+def load_budget_view(settings, fetch, force=False):
     plans = settings['projects']
-    manual = st.button('重新讀取', disabled=not bool(plans), help='首次開啟自動載入；之後按此按鈕取得平台最新花費。')
+    accounts = {a['key']: a for a in settings['accounts']}
+    today = datetime.now(TAIPEI).date()
     entered = st.session_state.pop('budget_refresh_requested', False)
     view = st.session_state.get('budget_view')
     now = datetime.now(TAIPEI)
-    if refresh_due(settings, view, now, force=manual or entered):
+    if refresh_due(settings, view, now, force=force or entered):
         started = now.isoformat()
         with st.spinner('自動讀取各平台最新花費（含今日）…'):
             results = collect_spend(plans, accounts, fetch, today)
@@ -412,6 +428,18 @@ def render_budget_results(settings, fetch, entries):
         view = {'key': configuration_key(settings), 'results': results,
                 'requested_at': started, 'at': completed.isoformat(), 'date': str(today)}
         st.session_state.budget_view = view
+    return view
+
+
+def render_budget_results(settings, fetch, entries):
+    today = datetime.now(TAIPEI).date()
+    groups = {g['id']: g for g in settings.get('project_groups', [])}
+    accounts = {a['key']: a for a in settings['accounts']}
+    plans = settings['projects']
+    manual = st.button('重新讀取', disabled=not bool(plans), help='首次開啟自動載入；之後按此按鈕取得平台最新花費。')
+    view = load_budget_view(settings, fetch, force=manual)
+    if manual:
+        st.rerun()
     fresh = view and view.get('key') == configuration_key(settings) and view.get('date') == str(today)
     results = view['results'] if fresh else {}
     if fresh:
@@ -485,7 +513,7 @@ def render_group_totals(plans, results, today, settings):
     data = group_summary(plans, results, today, settings)
     a, b, c, d = st.columns(4)
     money = lambda v: f'{v:,.2f}' if v is not None else '—'
-    a.metric('累積預算', money(data['budget']))
+    a.metric('累計預算', money(data['budget']))
     b.metric('累計總花費', money(data['spend']))
     c.metric('專案超支' if data['remaining'] is not None and data['remaining'] < 0 else '專案結餘',
              money(abs(data['remaining'])) if data['remaining'] is not None else '—')

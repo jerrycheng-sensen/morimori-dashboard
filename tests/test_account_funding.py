@@ -100,3 +100,52 @@ def test_budget_transfer_is_neutral_and_adjustments_are_counted():
     result = project_budget_totals(s, {('meta','123'):{'error':'API error'}}, END)
     assert result['platforms']['meta']['totals']['?meta:123'] == 90
     assert result['totals']['TWD'] == 230  # Never assign the other account's currency.
+
+
+def test_project_kpis_use_same_scope_instead_of_unrelated_account_spend():
+    from mori.account_funding import project_kpis
+    s = budget_settings()
+    results = {'m': {'spend_raw':'90.01','spend':90.01,'currency':'TWD'},
+               'g': {'spend_raw':'120.02','spend':120.02,'currency':'TWD'}}
+    accounts = {('meta','123'):{'currency':'TWD','spend_raw':'9999'},
+                ('google','456'):{'currency':'TWD','spend_raw':'9999'}}
+    v = project_kpis(s, results, accounts, END)
+    assert v['combined']['budget']['TWD'] == 300
+    assert v['combined']['spent']['TWD'] == Decimal('210.03')
+    assert v['combined']['remaining']['TWD'] == Decimal('89.97')
+    results['m']['spend_raw'] = '250.00'
+    v = project_kpis(s, results, accounts, END)
+    assert v['combined']['remaining']['TWD'] == Decimal('-70.02')
+
+
+def test_project_kpis_unknown_unset_and_future_are_distinct():
+    from mori.account_funding import project_kpis
+    s = budget_settings()
+    results = {'m': {'error':'API讀取失敗'}, 'g': {'spend':100, 'currency':'TWD'}}
+    v = project_kpis(s, results, {}, END)
+    assert v['combined']['remaining'] is None and v['combined']['spent'] is None
+    assert v['combined']['budget']['TWD'] == 300
+    assert v['platforms']['google']['remaining']['TWD'] == 100
+    s['projects'][0]['start'] = '2027-01-01'
+    v = project_kpis(s, results, {}, END)
+    assert v['combined']['spent']['TWD'] == 100
+    assert v['combined']['remaining']['TWD'] == 200
+    s['projects'][1]['budget'] = 0
+    assert project_kpis(s, results, {}, END)['combined']['remaining'] is None
+
+
+def test_project_kpis_do_not_double_count_overlapping_meta_ads():
+    from mori.account_funding import project_kpis
+    s = budget_settings()
+    s['projects'][1]['account_key'] = 'm'
+    row = {'campaign_id':'c', 'ad_id':'same-ad', 'spend':10}
+    results = {key:{'spend':10,'currency':'TWD','since':'2026-09-29','until':'2026-11-18','rows':[row]}
+               for key in ('m','g')}
+    v = project_kpis(s, results, {}, END)
+    assert v['combined']['remaining'] is None and v['combined']['spent'] is None
+    assert any('重疊' in error for error in v['platforms']['meta']['errors'])
+    results['g']['since'] = '2026-11-19'
+    results['g']['until'] = '2026-11-22'
+    v = project_kpis(s, results, {}, END)
+    assert v['combined']['spent']['TWD'] == 20
+    assert v['combined']['remaining']['TWD'] == 280

@@ -529,3 +529,38 @@ Validation: all 131 tests passed after the name/layout change; the AppTest suite
 was rerun after the final contrast/spacing cleanup. No new implementation-mirror
 tests were added for reversible cosmetic changes. Real deployed desktop/mobile
 appearance still requires visual acceptance after .35 loads.
+
+### Independent three-KPI project panel and comparable remaining budget (2026.11.22.36)
+
+The combined header is now a standalone warm-white section with its own heading,
+border, elevation, spacious three-card grid and numeric type up to 54px. Budget,
+spend and remaining have separate labelled surfaces; remaining uses a subtle
+champagne treatment, with negative balances preserved and highlighted in red.
+Mobile stacks the cards. Labels consistently use 累計預算 / 累計花費 / 剩餘預算.
+
+The earlier header mixed all-plan budgets with full-account spend, explicitly
+warning they could not be subtracted. This version makes all three primary KPIs
+comparable: every configured plan contributes its adjusted budget and recognized
+spend over that plan's advertising window through today, capped at its end date.
+Remaining is exactly their difference. Future plans contribute known zero spend;
+unset budgets, failed/invalid costs, currency mismatches or duplicate recognition
+leave remaining unknown. Repeated ad IDs in overlapping Meta plan periods are
+not guessed or double-summed. Currencies remain separate. No invoice or actual
+budget/spend data was rewritten.
+
+Both platform sections now also use the three comparable project values. Original
+whole-account costs remain independently fetched and visible in each platform's
+完整帳號花費（供對帳） expander, including the selected account date window and
+read timestamp. Account reconciliation can include ads never registered as
+projects, so its amount can differ from the primary project KPI; it is never
+silently subtracted from project budgets or presented as a wallet balance.
+
+A shared project snapshot loader runs before the primary KPI panel, so its values
+are available on the first render. Header/detail reads share the same session
+view; manual refresh updates then rerenders without a second API fetch. No minute
+polling was added. Existing invoice actions and project navigation remain native.
+Validation: 134 tests pass, including comparable-scope exact Decimal arithmetic,
+negative balances, failure/unset/future distinctions, overlap rejection and the
+existing initial/manual-only navigation, ledger, invoice and provider suites.
+No live values or deployed responsive screenshot have been independently
+verified after this change.
