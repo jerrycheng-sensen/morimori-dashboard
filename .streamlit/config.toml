@@ -1,0 +1,23 @@
+[theme]
+primaryColor = "#17421E"
+backgroundColor = "#f4f7f4"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#173426"
+font = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
+headingFont = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
+codeFont = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
+
+[server]
+headless = true
+
+[client]
+showErrorDetails = false
+
+[theme.sidebar]
+font = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
+headingFont = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
+codeFont = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
+primaryColor = "#B8E572"
+backgroundColor = "#0B1D12"
+secondaryBackgroundColor = "#17421E"
+textColor = "#DCE8D7"
