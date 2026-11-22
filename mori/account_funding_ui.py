@@ -40,16 +40,24 @@ def kpi_card(label, values, note, kind):
 
 
 @st.fragment
-def render_account_totals(settings, fetch, project_fetch=None):
+def render_account_totals(settings, fetch, project_fetch=None, persist=None):
     today = datetime.now(TAIPEI).date()
     suggested = default_since(settings, today)
     st.markdown('<div class="mori-account-title">雙平台預算總覽</div>', unsafe_allow_html=True)
     with st.expander('檢查是否有廣告花費漏列專案'):
-        st.caption('用來核對：有沒有廣告已經花錢，卻還沒加入專案。可查看下方各平台的「帳號全部花費」，再與廣告後台核對；目前不會自動列出漏列的廣告。')
+        st.caption('找出有花費、卻還沒加入專案的廣告，再選擇所屬專案歸案。')
         custom = st.checkbox('改選查詢開始日', key='account_totals_custom_since')
         since = st.date_input('查詢開始日', suggested, max_value=today, key='account_totals_since') if custom else suggested
         st.caption(f'查詢期間：{since} ～ {today}。與廣告後台核對時，請選相同日期。')
         st.caption('預設從系統最早的廣告計畫或發票紀錄查到今天。這裡的日期只影響帳號查詢，不會改變專案的預算、花費與剩餘金額。')
+        from mori.unassigned_ui import render_unassigned
+        render_unassigned(settings, project_fetch, persist, since, today)
+    from mori.unassigned_ui import audit_key, pending_units
+    audit = st.session_state.get('unassigned_view', {})
+    if audit.get('key') == audit_key(settings, since, today):
+        count = len(pending_units(audit['result']['pending']))
+        if count:
+            st.warning(f'有 {count} 則廣告／素材群組的花費尚未歸案，請展開上方檢查區處理。')
     manual = st.button('重新讀取全部預算', key='account_totals_reload', disabled=not bool(settings['accounts']),
                        help='取得各專案與廣告帳號最新回報的花費，包含今天。')
     key = view_key(settings, since, today)

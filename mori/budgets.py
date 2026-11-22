@@ -195,6 +195,8 @@ def save_plan(settings, plan):
     old = next((p for p in updated['projects'] if p['id'] == plan['id']), None)
     if old and old['account_key'] != plan['account_key'] and any(r.get('project_id') == plan['id'] for r in settings['rules']):
         raise AppError('此平台計畫已連結異常規則，不能直接換成另一個廣告帳號；請新增平台計畫。')
+    if old and old.get('assigned_units') and old['account_key'] != plan['account_key']:
+        raise AppError('此計畫已有手動歸案，請先撤銷手動歸案，才能更換廣告帳號。')
     item = {**(old or {}), **plan}
     updated['projects'] = [item if p['id'] == item['id'] else p for p in updated['projects']] if old else updated['projects'] + [item]
     from mori.budget_ledger import protect_history

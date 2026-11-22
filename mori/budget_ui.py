@@ -217,7 +217,7 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
         plans = settings['projects']
         from mori.account_funding_ui import render_account_totals
         with st.container(key='budget_account_totals'):
-            render_account_totals(settings, account_fetch, fetch)
+            render_account_totals(settings, account_fetch, fetch, persist)
         st.markdown('<div class="mori-budget-divider" role="separator"></div>', unsafe_allow_html=True)
         selected = st.session_state.setdefault('budget_section', 'overview')
         choices = [('overview', '預算總覽', ':material/dashboard:'),
@@ -572,6 +572,8 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
         st.caption('即時數據・含今日未完整花費，平台可能延遲回報或回補。')
     st.markdown(funding_badge(settings, plan['id']), unsafe_allow_html=True)
     proof_caption(settings, plan['id'])
+    if plan.get('assigned_units'):
+        st.caption(f"另有 {len(plan['assigned_units'])} 則廣告／素材群組以 ID 手動歸案，可在上方漏列檢查中查看或撤銷。")
     from mori.invoices import invoice_summary
     proof = invoice_summary(settings, plan['id'])
     if data['currency'] and proof['totals']:

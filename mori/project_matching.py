@@ -12,6 +12,16 @@ def conditions(plan):
                                             'text': plan.get('keyword', '')}]
 
 def validate_matching(plan, platform):
+    units = plan.get('assigned_units', [])
+    if not isinstance(units, list) or len(units) > 10000:
+        raise AppError('手動歸案資料格式不正確。')
+    for unit in units:
+        if (not isinstance(unit, dict) or set(unit) != {'kind', 'id', 'campaign_id', 'adset_id'}
+                or unit['kind'] not in ('ad', 'asset_group')
+                or not all(isinstance(unit[k], str) and unit[k].isdigit() for k in ('id', 'campaign_id'))
+                or not isinstance(unit['adset_id'], str) or (unit['adset_id'] and not unit['adset_id'].isdigit())
+                or (platform == 'meta' and unit['kind'] != 'ad')):
+            raise AppError('手動歸案的廣告 ID 格式不正確。')
     rules = conditions(plan)
     if not isinstance(rules, list) or not 1 <= len(rules) <= 6:
         raise AppError('請設定 1～6 個廣告認列條件。')
@@ -28,7 +38,19 @@ def validate_matching(plan, platform):
         if rule['field'] in ('ad_id', 'asset_group_id') and not rule['text'].strip().isdigit():
             raise AppError('廣告／素材群組 ID 請填完整數字。')
 
+def unit_identity(row):
+    kind = 'asset_group' if row.get('asset_group_id') else 'ad'
+    value = row.get('asset_group_id') if kind == 'asset_group' else row.get('ad_id')
+    if not value or not row.get('campaign_id'):
+        return None
+    return {'kind': kind, 'id': str(value), 'campaign_id': str(row['campaign_id']),
+            'adset_id': '' if kind == 'asset_group' else str(row.get('adset_id') or '')}
+
+
 def matches(plan, row):
+    unit = unit_identity(row)
+    if unit and unit in plan.get('assigned_units', []):
+        return True
     def match(rule):
         value = row.get(rule['field']) or ''
         values = value if isinstance(value, list) else [value]
