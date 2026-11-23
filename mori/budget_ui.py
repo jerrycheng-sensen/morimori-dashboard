@@ -230,9 +230,20 @@ def render_google_preview(preview):
             st.info('沒有符合條件的廣告，請檢查走期與文字。')
     for warning in preview.get('warnings', []):
         st.warning(warning)
+    render_google_audit(preview)
     if rows:
         with st.expander('查看逐日廣告／素材群組明細'):
             money_table(st, pd.DataFrame(rows), ['google'] * len(rows), {'spend', 'spend_raw'})
+
+
+def render_google_audit(result):
+    if not result or not result.get('audit'):
+        return
+    with st.expander('逐日對帳：檢查花費差在哪裡'):
+        st.caption(f"帳號時區：{result.get('timezone') or '未提供'}｜讀取開始：{result.get('read_started') or '未提供'}｜讀取完成：{result.get('read_finished') or '未提供'}")
+        st.caption('活動與明細差額＝活動回報－全部明細；條件未納入花費＝全部明細－本次認列。差額不會自動補進專案。表格保留原始小數供核對。')
+        table = pd.DataFrame(result['audit'])
+        st.dataframe(table, hide_index=True, width='stretch')
 
 
 def select_budget_section(section):
@@ -635,6 +646,8 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
         st.warning('部分廣告缺少選定的文案欄位；請展開下方明細核對未納入的花費。')
     if result and result.get('error'):
         st.error(account['name'] + '：' + result['error'])
+    if account['platform'] == 'google':
+        render_google_audit(result)
     funds = balance(settings, plan['id'], today)
     if compact:
         a, b = st.columns(2)

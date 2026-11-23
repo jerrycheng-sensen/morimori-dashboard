@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 import requests
 
 from mori.core import AppError, TAIPEI, conversion_ready, number
+from mori.google_creatives import cost_from_micros
 
 
 def request_json(session, method, url, **kwargs):
@@ -289,7 +290,7 @@ class GoogleProvider:
                          "campaign_id": key[0], "campaign_name": campaign.get("name", ""),
                          "adset_id": "", "adset_name": "", "ad_id": "", "ad_name": "",
                          "channel": campaign.get("advertisingChannelType", "UNKNOWN"), "currency": info["currencyCode"],
-                         "spend": number(metrics.get("costMicros")) / 1_000_000,
+                         "spend": float(cost_from_micros(metrics)), "spend_raw": str(cost_from_micros(metrics)),
                          "impressions": number(metrics.get("impressions")), "clicks": number(metrics.get("clicks")),
                          "conversions": total, "conversion_value": value})
         return {"rows": rows, "currency": info["currencyCode"], "timezone": info.get("timeZone", "未提供"),
@@ -319,6 +320,7 @@ class GoogleProvider:
         """Non-PMax ad/day and PMax asset-group/day cost, joined to current copy."""
         from mori.google_creatives import normalize, query_fields, reconcile
         start, end = check_dates(start, end)
+        read_started = datetime.now(TAIPEI).isoformat(timespec="seconds")
         report = self.fetch(account, start, end)
         campaign_rows = report['rows']
         rows = []
@@ -332,7 +334,7 @@ class GoogleProvider:
                     'date': item['segments']['date'], 'campaign_id': str(campaign['id']),
                     'campaign_name': campaign.get('name', ''),
                     'channel': campaign.get('advertisingChannelType', 'UNKNOWN'),
-                    'currency': report['currency'], 'spend': number(metrics.get('costMicros')) / 1_000_000,
+                    'currency': report['currency'], 'spend': float(cost_from_micros(metrics)), 'spend_raw': str(cost_from_micros(metrics)),
                     'impressions': number(metrics.get('impressions')), 'clicks': number(metrics.get('clicks')),
                     'conversions': None, 'conversion_value': None}
 
@@ -381,6 +383,9 @@ class GoogleProvider:
                              'paths': [p for p in [group.get('path1'), group.get('path2')] if p],
                              'available_fields': ['headlines', 'descriptions', 'paths']})
         report['warnings'] = reconcile(campaign_rows, rows, live_date=datetime.now(TAIPEI).date())
+        report['campaign_rows'] = campaign_rows
+        report['read_started'] = read_started
+        report['read_finished'] = datetime.now(TAIPEI).isoformat(timespec='seconds')
         report['rows'] = rows
         report['attribution_detail'] = True
         return report

@@ -65,3 +65,11 @@ Google 第一版僅提供行銷活動層級規則；未移植 Manus AI 聊天與
 - No changes to attribution rules, provider queries, stored project settings, expense calculations or financial records.
 - Validation: 190 automated tests passed, including preview-then-save integration, exact raw amount aggregation, repeated-day unit counts, distinct same-name campaigns, escaped names, Google decimal rendering and zero-match results. All 71 release files verified.
 - Live user-token results and production rendering are not established by mocked tests.
+
+## 2026.11.24.50 — Exact Google cost inputs and daily attribution audit
+
+- Preserve Google cost_micros as Decimal-derived raw strings in campaign and ad/asset-group daily rows. Keep numeric compatibility fields, but use raw values for financial totals and reconciliation. Reject malformed/negative micros instead of silently coercing them.
+- Compare campaign-versus-detail costs exactly, including a one-micro discrepancy. Retain the existing explicit live-day warning policy; historical/missing-row mismatches block recognition and now identify the campaign ID, date, both values and difference.
+- Preserve campaign-level query rows plus query start/end timestamps. Add a daily audit to Google previews and plan cards, separating condition-excluded cost from campaign/detail response differences without modifying stored budgets or inserting adjustments. Invalidate previous snapshots once on this release.
+- Validation: full suite 193 passed; the subsequently added exact audit UI test passed separately (194 tests total). All 71 release files verified. Tests cover >2^53 integer micros, malformed input, one-micro historical discrepancies, missing detail, partial recognition, query provenance and exact audit values.
+- The specific screenshot discrepancy (TWD 2.44) remains unproven: original UI/API read timestamps and matching backend daily export were not available. This release adds evidence needed to investigate; it does not assert a retroactive diagnosis or guarantee Google finality after project closure.

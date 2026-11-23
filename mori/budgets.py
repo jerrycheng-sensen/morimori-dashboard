@@ -12,7 +12,7 @@ from mori.core import AppError
 
 
 def configuration_key(settings):
-    return hashlib.sha256(json.dumps(['meta-current-names-v7-independent-reads', settings.get('projects', []), settings.get('project_groups', []),
+    return hashlib.sha256(json.dumps(['google-exact-cost-audit-v8', settings.get('projects', []), settings.get('project_groups', []),
                                      settings.get('accounts', [])], sort_keys=True).encode()).hexdigest()
 
 
@@ -146,7 +146,10 @@ def collect_spend(plans, accounts, fetch, today):
         spend = float(total)
         if spend < 0:
             raise AppError('回傳負花費，請先核對平台帳務調整。')
-        return {'spend': spend, 'currency': report['currency'], 'since': str(start), 'until': str(end),
+        from mori.google_creatives import attribution_audit
+        audit = attribution_audit(report['campaign_rows'], report['rows'], rows) if 'campaign_rows' in report else []
+        return {'audit': audit, 'read_started': report.get('read_started'), 'read_finished': report.get('read_finished'),
+                'spend': spend, 'currency': report['currency'], 'since': str(start), 'until': str(end),
                 'rows': rows, 'timezone': report.get('timezone'), 'warnings': warnings, 'includes_today': end == today,
                 'spend_raw': str(total), 'spend_basis': report.get('spend_basis')}
     results = {}

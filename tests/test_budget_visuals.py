@@ -150,3 +150,17 @@ render_google_preview({'since': '2026-11-02', 'until': '2026-11-23',
     assert not app.exception and not app.expander
     assert '沒有符合條件' in app.info[0].value
     assert [x.value for x in app.metric] == ['0', '0', '0']
+
+
+def test_google_audit_ui_keeps_exact_difference_and_query_times():
+    from streamlit.testing.v1 import AppTest
+    app = AppTest.from_string('''
+from mori.budget_ui import render_google_audit
+render_google_audit({'timezone': 'Asia/Taipei', 'read_started': '2026-11-24T00:01:00+08:00',
+ 'read_finished': '2026-11-24T00:01:05+08:00', 'audit': [
+ {'日期': '2026-11-23', '廣告活動 ID': '123', '活動與明細差額': '0.000001'}]})
+''').run()
+    assert not app.exception
+    assert app.dataframe[0].value.iloc[0]['活動與明細差額'] == '0.000001'
+    assert any('00:01:05' in x.value for x in app.caption)
+    assert any('不會自動補進專案' in x.value for x in app.caption)

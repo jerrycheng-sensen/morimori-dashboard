@@ -53,6 +53,9 @@ def test_google_budget_query_replaces_campaign_cost_without_duplicate_assets():
     result = provider.fetch_budget({'key': 'g'}, '2026-10-01', '2026-11-18')
     assert result['attribution_detail']
     assert len(result['rows']) == 2
+    assert result['rows'][0]['spend_raw'] == '123.456789'
+    assert result['read_started'] and result['read_finished']
+    assert len(result['campaign_rows']) == 2
     assert sum(r['spend'] for r in result['rows']) == pytest.approx(178.456789)
     assert result['rows'][0]['ad_id'] == '30'
     assert result['rows'][1]['asset_group_id'] == '40' and result['rows'][1]['ad_id'] == ''
@@ -60,6 +63,8 @@ def test_google_budget_query_replaces_campaign_cost_without_duplicate_assets():
     assert 'FROM ad_group_ad' in queries[0] and 'segments.conversion_action' not in queries[0]
     output = collect_spend([plan()], {'g': {'platform': 'google'}}, lambda *_: result, date(2026,11,20))['g1']
     assert output['spend'] == pytest.approx(178.456789)
+    assert len(output['audit']) == 2
+    assert all(r['活動與明細差額'] == '0.000000' or float(r['活動與明細差額']) == 0 for r in output['audit'])
     assert any('素材群組整筆花費' in w for w in output['warnings'])
 
 
@@ -164,3 +169,36 @@ def test_only_today_snapshot_drift_can_use_detail_cost_with_explicit_warning():
         reconcile(campaign,detail,live_date=date(2026,11,21))
     with pytest.raises(AppError):
         reconcile(campaign,[],live_date=date(2026,11,20))
+
+
+def test_google_raw_micros_never_round_trip_through_float():
+    from decimal import Decimal
+    from mori.google_creatives import cost_from_micros
+    assert cost_from_micros({'costMicros': '9007199254740993'}) == Decimal('9007199254.740993')
+    assert cost_from_micros({}) == 0
+    for value in ['1.5', '-1', 'NaN', None]:
+        with pytest.raises(AppError):
+            cost_from_micros({'costMicros': value})
+
+
+def test_one_micro_historical_difference_is_reported_with_exact_day_and_id():
+    from mori.google_creatives import reconcile
+    campaign = [{'campaign_id': '123', 'date': '2026-11-22', 'spend': 1, 'spend_raw': '1.000001'}]
+    detail = [{**campaign[0], 'spend_raw': '1.000000'}]
+    with pytest.raises(AppError, match='2026-11-22') as error:
+        reconcile(campaign, detail, live_date=date(2026, 11, 24))
+    assert '123' in str(error.value) and '0.000001' in str(error.value)
+
+
+def test_audit_separates_partial_attribution_from_different_api_snapshots():
+    from mori.google_creatives import attribution_audit
+    campaign = [{'campaign_id':'1', 'campaign_name':'桃竹', 'date':'2026-11-23', 'spend':100,
+                 'spend_raw':'100.000001'}]
+    detail = [{**campaign[0], 'spend_raw':'60'}, {**campaign[0], 'spend_raw':'39.9'}]
+    result = attribution_audit(campaign, detail, detail[:1])
+    assert result[0]['活動回報花費'] == '100.000001'
+    assert result[0]['全部明細花費'] == '99.9'
+    assert result[0]['條件認列花費'] == '60'
+    assert result[0]['條件未納入花費'] == '39.9'
+    assert result[0]['活動與明細差額'] == '0.100001'
+    assert attribution_audit(campaign, detail, []) == []
