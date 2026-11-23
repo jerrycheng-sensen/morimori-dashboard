@@ -163,6 +163,30 @@ BUDGET_STYLES = """<style>
 .mori-money-table th{background:#f0eee8;color:#17421E;position:sticky;top:0;z-index:1;text-align:left;}
 .mori-money-table th,.mori-money-table td{padding:12px 14px;border-bottom:1px solid #e8e5de;white-space:nowrap;}
 .mori-money-table tr:nth-child(even){background:#faf9f6;}
+
+/* Keep navigation reachable while the project area continues down the page. */
+.st-key-budget_overview_layout [data-testid="stHorizontalBlock"]{align-items:flex-start;}
+.st-key-budget_project_rail{gap:14px!important;}
+.st-key-budget_project_list{height:auto!important;max-height:none;}
+.st-key-budget_project_content{min-width:0;gap:20px!important;}
+.st-key-budget_project_content>.stElementContainer{min-width:0;}
+.st-key-budget_overview_layout .mori-kpi-number strong{font-size:clamp(28px,3.2vw,48px);}
+.st-key-budget_overview_layout .mori-kpi-panel{padding:22px;margin:10px 0 22px;}
+.st-key-budget_overview_layout .mori-kpi-grid{gap:14px;}
+.st-key-budget_project_content>.stElementContainer [data-testid="stExpander"] summary{min-height:50px;}
+@media(min-width:1000px){
+ .st-key-budget_overview_layout [data-testid="stColumn"]:has(.st-key-budget_project_rail){position:sticky!important;top:5.5rem;align-self:flex-start;z-index:3;}
+ .st-key-budget_project_rail{max-height:calc(100dvh - 7rem);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#b9b1a3 transparent;overscroll-behavior:contain;}
+ .st-key-budget_project_rail [data-testid="stWidgetLabel"] p{font-size:15px!important;}
+}
+@media(max-width:999px){
+ .st-key-budget_overview_layout [data-testid="stHorizontalBlock"]:has(.st-key-budget_project_rail){flex-direction:column!important;}
+ .st-key-budget_overview_layout [data-testid="stColumn"]:has(.st-key-budget_project_rail),
+ .st-key-budget_overview_layout [data-testid="stColumn"]:has(.st-key-budget_project_content){width:100%!important;flex:1 1 100%!important;position:static!important;}
+ .st-key-budget_project_rail{max-height:none;overflow:visible;}
+ .st-key-budget_project_list{max-height:260px;overflow-y:auto;}
+}
+@media(max-width:700px){.st-key-budget_overview_layout .mori-kpi-grid{grid-template-columns:1fr;}.st-key-budget_project_content{gap:16px!important;}}
 </style>"""
 
 
@@ -269,10 +293,6 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
         groups = {g['id']: g for g in settings.get('project_groups', [])}
         accounts = {a['key']: a for a in settings['accounts']}
         plans = settings['projects']
-        from mori.account_funding_ui import render_account_totals
-        with st.container(key='budget_account_totals'):
-            render_account_totals(settings, account_fetch, fetch, persist)
-        st.markdown('<div class="mori-budget-divider" role="separator"></div>', unsafe_allow_html=True)
         selected = st.session_state.setdefault('budget_section', 'overview')
         choices = [('overview', '預算總覽', ':material/dashboard:'),
                    ('edit', '新增／編輯設定', ':material/edit_square:'),
@@ -285,8 +305,13 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
                               on_click=select_budget_section, args=(section,))
         st.markdown('<div class="mori-budget-divider" role="separator"></div>', unsafe_allow_html=True)
         if selected == 'overview':
-            render_budget_overview(settings, fetch)
-        elif selected == 'edit':
+            render_budget_overview(settings, fetch, persist, account_fetch)
+        else:
+            with st.expander('查看雙平台預算摘要', expanded=False):
+                from mori.account_funding_ui import render_account_totals
+                with st.container(key='budget_account_totals'):
+                    render_account_totals(settings, account_fetch, fetch, persist)
+        if selected == 'edit':
             if not accounts:
                 st.info('請先到「帳號與串接」新增廣告帳號。')
                 return
@@ -444,7 +469,7 @@ def render_project_rail(settings, today):
     entries = project_entries(settings, today)
     years = project_years(entries)
     with st.container(key='budget_project_rail', border=True):
-        st.markdown('<div class="mori-rail-title">專案導覽</div><div class="mori-rail-subtitle">選年度，快速掌握每個案子</div>', unsafe_allow_html=True)
+        st.markdown('<div class="mori-rail-title">專案導覽</div><div class="mori-rail-subtitle">搜尋或選擇專案，右側查看詳細預算</div>', unsafe_allow_html=True)
         year_options = [None] + years
         if st.session_state.get('budget_nav_year') not in year_options:
             st.session_state.budget_nav_year = today.year if today.year in years else (years[0] if years else None)
@@ -465,7 +490,7 @@ def render_project_rail(settings, today):
         if not visible:
             st.info('找不到符合的專案，請調整年度、狀態或搜尋文字。')
         colors = {'進行中': '#2d7637', '準備中': '#9a6418', '已結案': '#64748b'}
-        with st.container(height=480, border=False, key='budget_project_list'):
+        with st.container(border=False, key='budget_project_list'):
             for phase in STATES:
                 members = [e for e in visible if e['phase'] == phase]
                 if not members:
@@ -478,21 +503,29 @@ def render_project_rail(settings, today):
                                   type='primary' if selected == e['nav_id'] else 'secondary',
                                   help=f"檔期 {e['start']} ～ {e['end']}",
                                   on_click=select_budget_project, args=(e['nav_id'],))
-        st.caption('以專案檔期分類；廣告投放狀態另列。跨年專案可在兩個年度找到，金額仍依完整廣告走期呈現。')
+        with st.expander('導覽與金額說明'):
+            st.caption('年度、搜尋與檔期狀態只篩選專案清單，不會改變花費期間。跨年專案可在兩個年度找到；廣告狀態在專案內另列。')
     chosen = visible if selected == 'all' else [e for e in visible if e['nav_id'] == selected]
     return chosen, year
 
 
 @st.fragment
-def render_budget_overview(settings, fetch):
-    rail, content = st.columns([1, 3.7], gap='large')
-    with rail:
-        entries, year = render_project_rail(settings, datetime.now(TAIPEI).date())
-    with content:
-        with st.container(key='budget_project_content'):
-            st.markdown('<div class="mori-results-heading">' + (f'{year} 年' if year else '所有年度') +
-                        f' · {len(entries)} 個專案</div>', unsafe_allow_html=True)
-            render_budget_results(settings, fetch, entries)
+def render_budget_overview(settings, fetch, persist=None, account_fetch=None):
+    with st.container(key='budget_overview_layout'):
+        rail, content = st.columns([1, 3.6], gap='large')
+        with rail:
+            entries, year = render_project_rail(settings, datetime.now(TAIPEI).date())
+        with content:
+            with st.container(key='budget_project_content'):
+                from mori.account_funding_ui import render_account_totals
+                all_projects = st.session_state.get('budget_selected_project', 'all') == 'all'
+                with st.expander('雙平台預算總覽｜所有專案合計', expanded=all_projects):
+                    with st.container(key='budget_account_totals'):
+                        render_account_totals(settings, account_fetch, fetch, persist)
+                st.markdown('<div class="mori-budget-divider" role="separator"></div>', unsafe_allow_html=True)
+                title = (f'{year} 年' if year else '所有年度') + f' · {len(entries)} 個專案' if all_projects else ('目前檢視：' + (entries[0]['name'] if entries else '未選擇專案'))
+                st.markdown('<div class="mori-results-heading">' + html.escape(title) + '</div>', unsafe_allow_html=True)
+                render_budget_results(settings, fetch, entries)
 
 
 def load_budget_view(settings, fetch, force=False):

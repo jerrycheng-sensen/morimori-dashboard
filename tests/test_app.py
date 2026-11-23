@@ -379,6 +379,15 @@ def test_header_totals_stay_visible_across_tabs_and_reuse_account_reads(monkeypa
     assert not app.exception and len(calls) == 1
     assert any('雙平台預算總覽' in m.value for m in app.markdown)
     initial = app.session_state['budget_account_view']
+    elements = [m.value for m in app.markdown]
+    assert next(i for i,v in enumerate(elements) if 'mori-rail-title">專案導覽' in v) < next(i for i,v in enumerate(elements) if 'mori-account-title">雙平台預算總覽' in v)
+    app.button(key='budget_project_group:f').click().run()
+    assert not app.exception
+    assert any('目前檢視：感謝祭' in m.value for m in app.markdown)
+    assert not next(x for x in app.expander if x.label == '雙平台預算總覽｜所有專案合計').proto.expanded
+    assert len(calls) == 1 and app.session_state['budget_account_view'] == initial
+    app.button(key='budget_project_all').click().run()
+    assert not app.exception and len(calls) == 1
     for tab in ['budget_nav_invoices','budget_nav_edit','budget_nav_overview']:
         app.button(key=tab).click().run()
         assert not app.exception

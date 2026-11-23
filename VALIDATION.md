@@ -73,3 +73,11 @@ Google 第一版僅提供行銷活動層級規則；未移植 Manus AI 聊天與
 - Preserve campaign-level query rows plus query start/end timestamps. Add a daily audit to Google previews and plan cards, separating condition-excluded cost from campaign/detail response differences without modifying stored budgets or inserting adjustments. Invalidate previous snapshots once on this release.
 - Validation: full suite 193 passed; the subsequently added exact audit UI test passed separately (194 tests total). All 71 release files verified. Tests cover >2^53 integer micros, malformed input, one-micro historical discrepancies, missing detail, partial recognition, query provenance and exact audit values.
 - The specific screenshot discrepancy (TWD 2.44) remains unproven: original UI/API read timestamps and matching backend daily export were not available. This release adds evidence needed to investigate; it does not assert a retroactive diagnosis or guarantee Google finality after project closure.
+
+## 2026.11.24.51 — Budget workspace navigation and page flow
+
+- Place the four native section buttons immediately after the page heading, ahead of financial summaries. Start project navigation at the top left of the overview workspace, alongside the summary/content column.
+- Make the desktop navigation column sticky beneath the app header, with a viewport-bounded independently scrolling rail; remove the fixed 480px empty project-list area. Stack columns on narrower screens and keep a bounded project list without sticky overlays.
+- All-project view opens the cross-project summary; a selected project places its name and details first with the global summary available in a collapsed section. Other editing/ledger/invoice sections retain a collapsible summary and their existing forms.
+- Preserve cached reports, financial calculations, invoice entry points, project/year/status semantics and selected button states. No project, invoice or ledger data was submitted during implementation.
+- Validation: full 194-test suite passed; updated layout/navigation/cache integration test passed after extending it to check rail-before-summary order and project/all-project switching with no additional account reads. All 71 release files verified. Browser viewport/sticky behavior still requires live deployment verification.

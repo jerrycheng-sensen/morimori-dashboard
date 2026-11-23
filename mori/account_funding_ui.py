@@ -128,7 +128,7 @@ def render_account_totals(settings, fetch, project_fetch=None, persist=None):
                         st.caption('尚未新增此平台的廣告帳號。')
                     for error in value['errors']:
                         st.warning(error)
-    st.caption('主區預算、花費與剩餘採同一批已建立專案，不受下方年度、狀態、搜尋影響；剩餘預算不等於平台錢包餘額。資料未完整、預算未設定或認列重疊時，暫不顯示剩餘金額。')
+    st.caption('主區預算、花費與剩餘採同一批已建立專案，不受專案年度、狀態或搜尋影響；剩餘預算不等於平台錢包餘額。資料未完整、預算未設定或認列重疊時，暫不顯示剩餘金額。')
     if st.button('登錄／管理發票', key='account_totals_invoices', icon=':material/receipt_long:', type='primary'):
         open_invoices()
     with st.expander(f"查看待補發票清單（{budget['missing_projects']} 個專案）"):
