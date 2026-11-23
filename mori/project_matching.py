@@ -62,3 +62,26 @@ def matches(plan, row):
         return any(t in str(item).casefold() for t in tokens for item in values)
     checks = [match(rule) for rule in conditions(plan)]
     return any(checks) if plan.get('match_mode', 'all') == 'any' else all(checks)
+
+
+def verified_match(plan, row):
+    """True/False when attribution is certain; None if a required name is unknown.
+
+    An unrelated, verified condition can exclude a row even if another field is
+    unavailable. Explicit immutable-ID assignments do not depend on names.
+    """
+    if row.get('names_verified') is not False:
+        return matches(plan, row)
+    unit = unit_identity(row)
+    if unit and unit in plan.get('assigned_units', []):
+        return True
+    verified = set(row.get('verified_name_fields', []))
+    checks = []
+    for rule in conditions(plan):
+        if rule['field'] in ('campaign_name', 'adset_name', 'ad_name') and rule['field'] not in verified:
+            checks.append(None)
+        else:
+            checks.append(matches({'match_conditions': [rule]}, row))
+    if plan.get('match_mode', 'all') == 'any':
+        return True if True in checks else None if None in checks else False
+    return False if False in checks else None if None in checks else True

@@ -23,3 +23,12 @@
 ## 範圍限制
 
 Google 第一版僅提供行銷活動層級規則；未移植 Manus AI 聊天與每週敘述摘要。這是整合測試版，不是已上線或全功能驗收完成的宣告。
+
+
+## 2026.11.23.45 — Meta current-name verification recovery
+
+- Retry incomplete expanded Meta name reads using bounded scalar-ID lookups; resolve current parent names separately with account/ID checks.
+- Evaluate name availability only for fields required by each plan. Verified nonmatching conditions exclude unrelated ads; immutable-ID assignments remain usable. Ambiguous paid rows still block affected totals, with ad IDs and safe reasons shown.
+- Preserve original Insights names and raw Decimal costs; no credential, invoice, budget, or spend-period changes.
+- Validation: 167 automated tests passed, including partial-name attribution, all/any ambiguity, scalar fallback, and explicit-ID assignment. Release manifest: all 71 files present.
+- Live user-token/API behavior was not verified in the local test environment.

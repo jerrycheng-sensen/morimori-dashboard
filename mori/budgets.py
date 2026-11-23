@@ -12,7 +12,7 @@ from mori.core import AppError
 
 
 def configuration_key(settings):
-    return hashlib.sha256(json.dumps(['meta-current-names-v5-include-today', settings.get('projects', []), settings.get('project_groups', []),
+    return hashlib.sha256(json.dumps(['meta-current-names-v6-scoped-verification', settings.get('projects', []), settings.get('project_groups', []),
                                      settings.get('accounts', [])], sort_keys=True).encode()).hexdigest()
 
 
@@ -107,13 +107,18 @@ def collect_spend(plans, accounts, fetch, today):
             return {'not_started': True, 'spend': 0., 'currency': None,
                     'since': None, 'until': None, 'rows': []}
         start, end = window
-        from mori.project_matching import matches, conditions
+        from mori.project_matching import matches, conditions, verified_match
         rules = conditions(plan)
-        if any(r.get('names_verified') is False and Decimal(str(r.get('spend_raw', r.get('spend', 0)))) > 0 for r in report['rows']):
-            raise AppError('部分 Meta 廣告的最新名稱尚未核對，暫不以舊名計算專案花費；請重新讀取。歷史花費未被刪除。')
+        unresolved = [r for r in report['rows'] if verified_match(plan, r) is None
+                      and Decimal(str(r.get('spend_raw', r.get('spend', 0)))) > 0]
+        if unresolved:
+            details = '；'.join(f"ID {r.get('ad_id', '未知')}：{r.get('name_lookup_issue') or '最新名稱未取得'}"
+                               for r in unresolved[:5])
+            suffix = f'（另有 {len(unresolved)-5} 筆）' if len(unresolved) > 5 else ''
+            raise AppError(f'有 {len(unresolved)} 筆廣告尚無法確認是否屬於此專案，花費暫不加總。{details}{suffix}。請重新讀取，或至「檢查未歸案花費」查看明細。')
         if accounts[plan['account_key']].get('platform') == 'google' and any(c['field'] != 'campaign_name' for c in rules) and not report.get('attribution_detail'):
             raise AppError('尚未取得 Google 廣告明細，不能用文案或廣告群組認列花費。')
-        rows = [r for r in report['rows'] if matches(plan, r)]
+        rows = [r for r in report['rows'] if verified_match(plan, r) is True]
         warnings = list(report.get('warnings', []))
         if accounts[plan['account_key']].get('platform') == 'google' and any(c['field'] != 'campaign_name' for c in rules):
             warnings.append('文案為 API 目前設定，不代表歷史每次曝光的文案；花費以整則廣告／整個素材群組與設定走期認列。')

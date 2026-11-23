@@ -64,11 +64,15 @@ def test_name_failure_is_unknown_not_deleted_or_false_unassigned(mode):
         return {'101':item}
     refresh_names(get,s['accounts'][0],[r])
     assert r['names_verified'] is False
-    assert r['current_status']=='UNKNOWN' and r['spend_raw']=='92166'
+    assert r['current_status']==('PAUSED' if mode=='missing_parent' else 'UNKNOWN')
+    assert r['spend_raw']=='92166'
     result=scan(s,lambda *_:{'rows':[r],'currency':'TWD'},'2026-11-01','2026-11-10')
     assert not result['pending'] and len(result['unverified'])==1
     costs=collect_spend(s['projects'],{'m':s['accounts'][0]},lambda *_:{'rows':[r],'currency':'TWD'},date(2026,11,22))
-    assert 'error' in costs['p'] and 'spend' not in costs['p']
+    if mode=='missing_parent':
+        assert costs['p']['spend_raw']=='92166'
+    else:
+        assert 'error' in costs['p'] and 'spend' not in costs['p']
 
 
 def test_deleted_status_is_only_shown_when_returned_by_meta_and_cost_remains():
@@ -86,3 +90,47 @@ def test_batch_lookup_deduplicates_ids_and_bounds_request_size():
     refresh_names(get,s['accounts'][0],rows)
     assert len(calls)==3 and max(map(len,calls))<=50
     assert sum(map(len,calls))==101 and all(r['names_verified'] for r in rows)
+
+
+def test_scalar_fallback_recovers_names_without_expanded_parents():
+    s=settings(); r=history(); calls=[]
+    def get(path, params):
+        calls.append(params)
+        if 'campaign{' in params['fields']:
+            raise AppError('展開查詢失敗')
+        if 'campaign_id' in params['fields']:
+            return {'101': {'id':'101', 'account_id':'123', 'name':'林口開幕｜素材B',
+                            'campaign_id':'1', 'adset_id':'2'}}
+        return {'1':{'id':'1','account_id':'123','name':'林口開幕活動'},
+                '2':{'id':'2','account_id':'123','name':'林口新客'}}
+    refresh_names(get,s['accounts'][0],[r])
+    assert r['names_verified'] and r['spend_raw']=='92166' and len(calls)==3
+
+
+def test_unrelated_missing_field_does_not_block_plan_but_ambiguous_one_does():
+    from mori.project_matching import verified_match
+    s=settings(); r=history()
+    r.update(names_verified=False, verified_name_fields=['ad_name'], ad_name='其他專案')
+    plan=s['projects'][0]
+    assert verified_match(plan,r) is False
+    result=collect_spend([plan],{'m':s['accounts'][0]},lambda *_:{'rows':[r],'currency':'TWD'},date(2026,11,22))
+    assert result['p']['spend_raw']=='0'
+    combined={**plan,'match_conditions':[{'field':'ad_name','text':'林口開幕'},
+                                       {'field':'campaign_name','text':'轉換'}]}
+    assert verified_match(combined,r) is False
+    assert verified_match({**combined,'match_mode':'any'},r) is None
+    r['ad_name']='林口開幕'
+    assert verified_match(combined,r) is None
+    assert verified_match({**combined,'match_mode':'any'},r) is True
+    r['name_lookup_issue']='尚未取得最新名稱：廣告活動'
+    result=collect_spend([combined],{'m':s['accounts'][0]},lambda *_:{'rows':[r],'currency':'TWD'},date(2026,11,22))
+    assert 'ID 101' in result['p']['error'] and '廣告活動' in result['p']['error']
+
+
+def test_explicit_assignment_works_when_names_are_unavailable():
+    from mori.project_matching import unit_identity, verified_match
+    s=settings();r=history();r['names_verified']=False
+    plan={**s['projects'][0], 'assigned_units':[unit_identity(r)]}
+    assert verified_match(plan,r) is True
+    result=collect_spend([plan],{'m':s['accounts'][0]},lambda *_:{'rows':[r],'currency':'TWD'},date(2026,11,22))
+    assert result['p']['spend_raw']=='92166'
