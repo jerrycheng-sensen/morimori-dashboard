@@ -40,3 +40,12 @@ Google 第一版僅提供行銷活動層級規則；未移植 Manus AI 聊天與
 - Distinguish Meta code 100 (query/object) from code 190 (token); never print original API messages or credentials.
 - Validation: 172 automated tests passed, including real HTTP envelope shape, mixed success/failure batch responses, direct-ID transport fallback, and malformed response rejection. Monetary calculations, raw precision, budgets, invoices, and credentials unchanged.
 - The user's live Meta responses still require confirmation after deployment; mocked tests do not prove account access.
+
+## 2026.11.23.47 — Correct an existing budget transfer
+
+- Add one-step correction of the current transfer total, with live cached preview of both budgets and remaining amounts before confirmation. Normal transfer checks remain unchanged.
+- Append a correction linked to the original transaction, recording previous/new amounts, paired effects, reason and time. Never overwrite original records, add new funding, change raw expenses, or mutate Meta/Google settings.
+- Allow actual spend to exceed corrected allocations; retain nonnegative budget validation, currencies, successful expense reads, stale-value checks, and conservation of combined budgets.
+- Repeated corrections use the latest total. A corrected transfer is cancelled by correcting its total to zero, rather than reversing an obsolete amount. Net transfer summaries show the corrected total.
+- Validation: 184 tests passed, including the Linkou 36,386→34,128 case (Linkou 25,872; festival 90,128 and deficit 2,038), repeated edits/cancellation, tampered history rejection, stale values and Streamlit preview/save/no-double-post behavior. All 71 release files verified.
+- No production budget transaction was submitted during implementation/testing.

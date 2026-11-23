@@ -34,7 +34,7 @@ def impacts(entry):
     amount = money(entry['amount'])
     if entry['kind'] == 'transfer':
         return {entry['source_id']: -amount, entry['target_id']: amount}
-    if entry['kind'] == 'reversal':
+    if entry['kind'] in ('reversal', 'transfer_correction'):
         return {key: money(value) for key, value in entry['effects'].items()}
     return {entry['target_id']: amount}
 
@@ -48,7 +48,14 @@ def balance(settings, plan_id, through=None):
         if date.fromisoformat(entry['effective_on']) > through:
             continue
         delta = impacts(entry).get(plan_id, Decimal(0))
-        if entry['kind'] == 'adjustment':
+        if entry['kind'] == 'transfer_correction':
+            # Present the corrected net transfer, not a fictitious return loan.
+            change = money(entry['amount']) - money(entry['previous_amount'])
+            if plan_id == entry['source_id']:
+                outgoing += change
+            elif plan_id == entry['target_id']:
+                incoming += change
+        elif entry['kind'] == 'adjustment':
             adjustment += delta
         elif delta > 0:
             incoming += delta
@@ -115,6 +122,46 @@ def transfer(settings, source_id, target_id, amount, effective_on, reason, resul
     return append(settings, entry)
 
 
+def transfer_amount(settings, entry_id):
+    old = next((t for t in settings.get('budget_transactions', []) if t['id'] == entry_id), None)
+    if not old or old['kind'] != 'transfer':
+        raise AppError('請選擇原始預算轉移紀錄。')
+    value = money(old['amount'])
+    for entry in settings.get('budget_transactions', []):
+        if entry.get('corrects') == entry_id:
+            value = money(entry['amount'])
+    return value
+
+
+def correct_transfer(settings, entry_id, amount, reason, results, operation_id=None, now=None,
+                     expected_amount=None):
+    entries = settings.get('budget_transactions', [])
+    old = next((t for t in entries if t['id'] == entry_id), None)
+    if not old or old['kind'] != 'transfer' or any(t.get('reverses') == entry_id for t in entries):
+        raise AppError('只能修正尚未沖回的原始預算轉移。')
+    previous, amount = transfer_amount(settings, entry_id), money(amount)
+    if expected_amount is not None and money(expected_amount) != previous:
+        raise AppError('這筆轉移已被修正，請重新載入後再確認。')
+    if amount < 0 or amount == previous:
+        raise AppError('請填寫不同於目前金額、且不小於零的正確轉移金額。')
+    source, target = checked_result(results, old['source_id']), checked_result(results, old['target_id'])
+    if source['currency'] != old['currency'] or target['currency'] != old['currency']:
+        raise AppError('目前幣別與原紀錄不同，已停止修正。')
+    cost(source['spend']); cost(target['spend'])
+    day = (now or datetime.now(TAIPEI)).astimezone(TAIPEI).date()
+    change = amount - previous
+    entry = base_entry(settings, day, reason, operation_id, now)
+    # This corrects an allocation error. Existing spend is factual and may exceed
+    # the corrected allocation; never require fabricated funding to hide it.
+    entry.update(kind='transfer_correction', corrects=entry_id, previous_amount=float(previous),
+                 amount=float(amount), effects={old['source_id']:float(-change), old['target_id']:float(change)},
+                 source_id=old['source_id'], target_id=old['target_id'],
+                 source_label=plan_label(settings, old['source_id']), target_label=plan_label(settings, old['target_id']),
+                 currency=old['currency'], source_spend=source['spend'], target_spend=target['spend'],
+                 source_data_until=source.get('until'), target_data_until=target.get('until'))
+    return append(settings, entry)
+
+
 def adjustment(settings, plan_id, amount, effective_on, reason, results, operation_id=None, now=None):
     amount = money(amount)
     if not amount:
@@ -132,8 +179,10 @@ def adjustment(settings, plan_id, amount, effective_on, reason, results, operati
 def reverse(settings, entry_id, reason, results, operation_id=None, now=None):
     entries = settings.get('budget_transactions', [])
     old = next((t for t in entries if t['id'] == entry_id), None)
-    if not old or old['kind'] == 'reversal':
+    if not old or old['kind'] not in ('transfer', 'adjustment'):
         raise AppError('只能沖回原始轉移或追加／減列紀錄。')
+    if any(t.get('corrects') == entry_id for t in entries):
+        raise AppError('這筆轉移已有修正，請使用「修正轉移金額」；改為零可取消轉移。')
     if any(t.get('reverses') == entry_id for t in entries):
         raise AppError('此異動已沖回，不能再次沖回。')
     effects = {key: -value for key, value in impacts(old).items()}
@@ -156,22 +205,35 @@ def validate_ledger(settings):
     if not settings.get('budget_transactions'):
         return
     plans = {p['id']: p for p in settings['projects']}
-    seen, reversed_ids = {}, set()
+    seen, reversed_ids, corrected_amounts = {}, set(), {}
     for entry in settings.get('budget_transactions', []):
         if not entry.get('id') or entry['id'] in seen:
             raise AppError('預算異動識別碼必須唯一。')
-        if entry.get('kind') not in ('transfer', 'adjustment', 'reversal') or not entry.get('currency') or not str(entry.get('reason', '')).strip():
+        if entry.get('kind') not in ('transfer', 'adjustment', 'reversal', 'transfer_correction') or not entry.get('currency') or not str(entry.get('reason', '')).strip():
             raise AppError('預算異動內容不完整。')
         date.fromisoformat(entry['effective_on'])
         datetime.fromisoformat(entry['created_at'])
         amount = money(entry['amount'])
-        if not amount or (entry['kind'] != 'adjustment' and amount <= 0):
+        if (entry['kind'] == 'transfer_correction' and amount < 0) or (entry['kind'] != 'transfer_correction' and (not amount or (entry['kind'] != 'adjustment' and amount <= 0))):
             raise AppError('預算異動金額不正確。')
         if entry['kind'] == 'transfer' and (entry['source_id'] == entry['target_id'] or not entry.get('source_id')):
             raise AppError('預算轉移來源與接收計畫不正確。')
+        if entry['kind'] == 'transfer_correction':
+            old = seen.get(entry.get('corrects'))
+            if not old or old['kind'] != 'transfer' or old['id'] in reversed_ids:
+                raise AppError('修正必須對應尚未沖回的原始轉移紀錄。')
+            previous = corrected_amounts.get(old['id'], money(old['amount']))
+            change = amount - previous
+            if (money(entry.get('previous_amount')) != previous or not change
+                    or entry.get('source_id') != old['source_id'] or entry.get('target_id') != old['target_id']
+                    or entry['currency'] != old['currency']
+                    or impacts(entry) != {old['source_id']:-change, old['target_id']:change}
+                    or entry['effective_on'] < old['effective_on']):
+                raise AppError('轉移修正金額、方向或對應紀錄不正確。')
+            corrected_amounts[old['id']] = amount
         if entry['kind'] == 'reversal':
             old = seen.get(entry.get('reverses'))
-            if not old or old['kind'] == 'reversal' or old['id'] in reversed_ids:
+            if not old or old['kind'] not in ('transfer', 'adjustment') or old['id'] in reversed_ids or old['id'] in corrected_amounts:
                 raise AppError('沖回紀錄必須對應尚未沖回的原始異動。')
             expected = {key: -value for key, value in impacts(old).items()}
             if impacts(entry) != expected or entry['currency'] != old['currency'] or amount != money(old['amount']):
@@ -191,7 +253,7 @@ def protect_history(before, after):
     protect_invoice_history(before, after)
     existing = before.get('budget_transactions', [])
     if after.get('budget_transactions', [])[:len(existing)] != existing:
-        raise AppError('已儲存的預算異動不可覆寫或刪除，請使用沖回功能。')
+        raise AppError('已儲存的預算異動不可覆寫或刪除，請使用修正轉移金額或沖回功能。')
     locked = {key for t in existing for key in impacts(t)}
     plans = {p['id']: p for p in after['projects']}
     for old in before['projects']:

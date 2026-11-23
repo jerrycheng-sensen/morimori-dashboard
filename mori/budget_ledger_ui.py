@@ -5,7 +5,7 @@ import uuid
 import pandas as pd
 import streamlit as st
 
-from mori.budget_ledger import adjustment, balance, plan_label, reverse, transfer
+from mori.budget_ledger import adjustment, balance, plan_label, reverse, transfer, correct_transfer, transfer_amount
 from mori.budgets import collect_spend, configuration_key
 from mori.core import AppError, TAIPEI
 from mori.money_display import money_metric, money_text, money_table, plan_platform
@@ -15,17 +15,20 @@ def records(settings, plan_id=None):
     from mori.budget_ledger import impacts
     entries = settings.get('budget_transactions', [])
     reversed_ids = {t.get('reverses') for t in entries if t['kind'] == 'reversal'}
+    corrected_ids = {t.get('corrects') for t in entries if t['kind'] == 'transfer_correction'}
     rows = []
     for t in reversed(entries):
         if plan_id and plan_id not in impacts(t):
             continue
-        kind = {'transfer': '預算轉移', 'adjustment': '追加／減列', 'reversal': '沖回'}[t['kind']]
+        kind = {'transfer': '預算轉移', 'adjustment': '追加／減列', 'reversal': '沖回', 'transfer_correction':'修正轉移金額'}[t['kind']]
         rows.append({'異動編號': t['id'], '生效日': t['effective_on'], '建立時間': t['created_at'],
                      '類型': kind, '來源專案／平台': t.get('source_label', ''),
                      '接收專案／平台': t.get('target_label', ''), '金額': t['amount'], '幣別': t['currency'],
                      '本計畫增減': float(impacts(t).get(plan_id, 0)) if plan_id else None,
-                     '用途／原因': t['reason'], '狀態': '已沖回' if t['id'] in reversed_ids else '已入帳',
-                     '對應原紀錄': t.get('reverses', ''), '來源花費資料迄日': t.get('source_data_until') or ''})
+                     '用途／原因': t['reason'], '狀態': '已沖回' if t['id'] in reversed_ids else '已修正' if t['id'] in corrected_ids else '已入帳',
+                     '對應原紀錄': t.get('reverses') or t.get('corrects', ''),
+                     '修正前轉移金額': t.get('previous_amount'),
+                     '轉移修正差額': t['amount'] - t['previous_amount'] if t['kind'] == 'transfer_correction' else None, '來源花費資料迄日': t.get('source_data_until') or ''})
     df = pd.DataFrame(rows)
     if not df.empty:
         first = ['生效日', '類型', '來源專案／平台', '接收專案／平台', '金額', '幣別', '用途／原因', '狀態']
@@ -47,7 +50,7 @@ def render_ledger(settings, fetch, persist):
     if not plans:
         st.info('請先建立平台投放計畫，再進行預算異動。')
         return
-    kind = st.radio('異動方式', ['轉移預算', '追加／減列', '沖回紀錄'], horizontal=True, key='budget_tx_kind')
+    kind = st.radio('異動方式', ['轉移預算', '修正轉移金額', '追加／減列', '沖回紀錄'], horizontal=True, key='budget_tx_kind')
     label = lambda key: plan_label(settings, key)
     source_id = target_id = entry_id = None
     def transaction_platform(t):
@@ -64,11 +67,26 @@ def render_ledger(settings, fetch, persist):
             a, b = st.columns(2)
             money_metric(a, '來源調整後預算', balance(settings, source_id)['adjusted'], plan_platform(settings, source_id))
             money_metric(b, '接收調整後預算', balance(settings, target_id)['adjusted'], plan_platform(settings, target_id))
+    elif kind == '修正轉移金額':
+        undone = {t.get('reverses') for t in entries}
+        options = [t['id'] for t in entries if t['kind'] == 'transfer' and t['id'] not in undone]
+        if options:
+            def correction_label(key):
+                t = next(t for t in entries if t['id'] == key)
+                return f"{t['effective_on']}｜{t['source_label']} → {t['target_label']}｜目前 {money_text(transfer_amount(settings, key), transaction_platform(t))}"
+            entry_id = st.selectbox('選擇要修正的轉移紀錄', options, format_func=correction_label, key='budget_correct_entry')
+            old = next(t for t in entries if t['id'] == entry_id)
+            source_id, target_id = old['source_id'], old['target_id']
+            previous = transfer_amount(settings, entry_id)
+            st.info('輸入這筆轉移的正確總額。兩案預算同步更新，保留原紀錄與修正原因；不修改廣告花費。')
+        else:
+            st.info('目前沒有可修正的轉移紀錄。')
     elif kind == '追加／減列':
         target_id = st.selectbox('異動的專案／平台', list(plans), format_func=label, key='budget_adjust_target')
     else:
         undone = {t.get('reverses') for t in entries}
-        options = [t['id'] for t in entries if t['kind'] != 'reversal' and t['id'] not in undone]
+        corrected = {t.get('corrects') for t in entries}
+        options = [t['id'] for t in entries if t['kind'] in ('transfer', 'adjustment') and t['id'] not in undone and t['id'] not in corrected]
         if options:
             def entry_label(key):
                 t = next(t for t in entries if t['id'] == key)
@@ -78,12 +96,32 @@ def render_ledger(settings, fetch, persist):
             st.info('目前沒有可沖回的異動。')
     ready = bool((source_id and target_id) or (kind == '追加／減列' and target_id) or entry_id)
     if ready:
+        if kind == '修正轉移金額':
+            amount = st.number_input('正確的轉移總額', min_value=0., value=float(previous), step=100.,
+                                     format='%.0f' if transaction_platform(old) == 'meta' else '%.2f',
+                                     key='budget_correct_amount_' + entry_id + '_' + str(previous))
+            change = amount - float(previous)
+            direction = lambda delta: ('增加 ' if delta >= 0 else '減少 ') + money_text(abs(delta), transaction_platform(old))
+            st.caption('原轉出方預算' + direction(-change) + '；原接收方預算' + direction(change) + '。')
+            view_results = st.session_state.get('budget_view', {}).get('results', {})
+            for pid, delta in ((source_id, -change), (target_id, change)):
+                result = view_results.get(pid, {})
+                if 'spend' in result and not result.get('error'):
+                    projected = balance(settings, pid)['adjusted'] + delta
+                    remaining = projected - result['spend']
+                    st.write(label(pid))
+                    st.caption('修正後預算 ' + money_text(projected, plan_platform(settings, pid)) +
+                               '｜目前花費 ' + money_text(result['spend'], plan_platform(settings, pid)) +
+                               '｜結餘 ' + money_text(remaining, plan_platform(settings, pid)))
+            st.warning('修正後若花費超過預算，會如實顯示超支；不要求先追加或調入預算。')
         with st.form('budget_transaction_' + kind):
-            amount = st.number_input('異動金額（追加為正、減列為負）' if kind == '追加／減列' else '轉移金額',
+            if kind != '修正轉移金額':
+                amount = st.number_input('異動金額（追加為正、減列為負）' if kind == '追加／減列' else '轉移金額',
                                      min_value=None if kind == '追加／減列' else 0., value=0., step=100., format='%.0f' if all(plan_platform(settings, pid) == 'meta' for pid in [source_id, target_id] if pid) else '%.2f') if kind != '沖回紀錄' else None
-            effective = st.date_input('生效日期', today, max_value=today) if kind != '沖回紀錄' else today
+            effective = st.date_input('生效日期', today, max_value=today) if kind not in ('沖回紀錄', '修正轉移金額') else today
             reason = st.text_input('異動原因／用途', placeholder='例如：林口結餘轉供感謝祭北部加強')
-            confirmed = st.checkbox('已核對相關專案的廣告歸類；確認儲存這筆預算異動')
+            confirmed = st.checkbox('已核對相關專案的廣告歸類；確認儲存這筆預算異動',
+                                    key='budget_confirm_' + kind + ('_' + entry_id + '_' + str(amount) if kind == '修正轉移金額' else ''))
             st.caption('送出時會重新讀取相關計畫花費並檢核結餘。包含今日平台已回報的花費；仍可能有尚未回報或回補的花費，轉出前請核對投放狀況。')
             if st.form_submit_button('確認儲存預算異動'):
                 try:
@@ -99,6 +137,8 @@ def render_ledger(settings, fetch, persist):
                         results = collect_spend(list(plans.values()), accounts, fetch, today)
                         if kind == '轉移預算':
                             updated = transfer(settings, source_id, target_id, amount, effective, reason, results, op)
+                        elif kind == '修正轉移金額':
+                            updated = correct_transfer(settings, entry_id, amount, reason, results, op, expected_amount=previous)
                         elif kind == '追加／減列':
                             updated = adjustment(settings, target_id, amount, effective, reason, results, op)
                         else:
@@ -118,6 +158,6 @@ def render_ledger(settings, fetch, persist):
     if df.empty:
         st.info('尚無預算異動紀錄。')
     else:
-        money_table(st, df, [plan_platform(settings, selected) if selected != 'all' else transaction_platform(next(t for t in entries if t['id'] == row['異動編號'])) for _, row in df.iterrows()], {'金額', '本計畫增減'})
+        money_table(st, df, [plan_platform(settings, selected) if selected != 'all' else transaction_platform(next(t for t in entries if t['id'] == row['異動編號'])) for _, row in df.iterrows()], {'金額', '本計畫增減', '修正前轉移金額', '轉移修正差額'})
         st.download_button('下載預算異動紀錄 CSV', df.to_csv(index=False).encode('utf-8-sig'),
                            'mori-budget-ledger.csv', on_click='ignore')
