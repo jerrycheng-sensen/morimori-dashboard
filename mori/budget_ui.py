@@ -15,7 +15,7 @@ from mori.budgets import (collect_spend, configuration_key, plan_summary, save_g
 from mori.core import AppError, TAIPEI
 from mori.money_display import money_text, money_metric, money_note, money_table, plan_platform
 from mori.budget_ledger import balance, impacts
-from mori.budget_visuals import platform_brand, budget_progress
+from mori.budget_visuals import platform_brand, budget_progress, removed_ad_rows, removed_ad_count
 from mori.budget_ledger_ui import records, render_ledger
 
 
@@ -151,6 +151,8 @@ BUDGET_STYLES = """<style>
 @media(max-width:700px){.st-key-budget_summary_panel{padding:18px!important;}.st-key-budget_summary_meta,.st-key-budget_summary_google{padding:16px!important;}.mori-budget-utilisation{padding:14px;}.mori-platform-brand{font-size:22px!important;}}
 
 
+.mori-history-badge{display:inline-flex;align-items:center;padding:8px 12px;border:1px solid #d8c49f;border-radius:9px;background:#f6eddc;color:#6d5428;font-size:14px;font-weight:700;line-height:1.5;}
+.mori-history-note{padding:14px 18px;border:1px solid #ded1b7;border-left:4px solid #b79a65;border-radius:10px;background:#faf6ee;color:#5f5139;font-size:15px;line-height:1.8;margin:12px 0;}
 .mori-money-fraction{font-size:.58em!important;font-weight:500!important;opacity:.6;letter-spacing:0;white-space:nowrap;}
 .mori-money-metric{padding:20px 18px;border:1px solid #dedbd4;border-radius:14px;background:#fffefa;min-width:0;}
 .mori-money-label{font-size:15px;color:#5c6b5f;margin-bottom:10px;}
@@ -187,9 +189,23 @@ def status_badge(scope, state):
     return f'<span class="mori-status {kind}"><span class="status-scope">{html.escape(scope)}</span>{state}</span>'
 
 
-def project_header(name, phase, ads_phase):
+def project_header(name, phase, ads_phase, removed_count=0):
+    history = f'<span class="mori-history-badge">含已刪除／封存廣告 {removed_count} 則</span>' if removed_count else ''
     return (f'<div class="mori-project-heading"><div><div class="mori-project-kicker">廣告專案</div><h2 class="project-name">{html.escape(name)}</h2></div>'
-            f'<div class="mori-status-pair">{status_badge("檔期", phase)}{status_badge("廣告", ads_phase)}</div></div>')
+            f'<div class="mori-status-pair">{status_badge("檔期", phase)}{status_badge("廣告", ads_phase)}{history}</div></div>')
+
+
+def render_removed_ad_notice(items):
+    if not items:
+        return
+    count = removed_ad_count(items)
+    st.markdown('<div class="mori-history-note"><strong>花費包含已刪除／封存廣告</strong><br>'
+                f'本案有 {count} 則廣告已刪除或封存，過去的花費仍計入專案；與 Meta 後台核對時，請一併查詢這些廣告。</div>',
+                unsafe_allow_html=True)
+    with st.expander(f'查看已刪除／封存廣告明細（{count} 則）'):
+        st.caption('下列金額已包含在專案花費中，不需再加一次。依各平台計畫的廣告走期列示。')
+        money_table(st, pd.DataFrame(items), ['meta'] * len(items), {'已計入花費'})
+        st.caption('狀態依 Meta API 最近一次回報；API 的「已封存」與廣告後台的「已刪除」可能顯示不同，核對請以廣告 ID 為準。查詢日期不是廣告實際開關日期。')
 
 
 def select_budget_section(section):
@@ -507,7 +523,9 @@ def render_budget_results(settings, fetch, entries):
         with st.container(border=True, key='budget_project_card_' + gid):
             phase = period_state(group['start'], group['end'], today)
             ads_phase = advertising_state(children, today)
-            st.markdown(project_header(group['name'], phase, ads_phase), unsafe_allow_html=True)
+            removed = removed_ad_rows(children, accounts, results)
+            st.markdown(project_header(group['name'], phase, ads_phase, removed_ad_count(removed)), unsafe_allow_html=True)
+            render_removed_ad_notice(removed)
             from mori.invoice_ui import funding_badge
             if children:
                 st.markdown('<div class="mori-status-pair">' + ''.join(funding_badge(settings, p['id'], 'Meta' if accounts[p['account_key']]['platform'] == 'meta' else 'Google Ads') for p in children) + '</div>', unsafe_allow_html=True)
@@ -568,6 +586,11 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
     phase = period_state(plan['start'], plan['end'], today, plan.get('status') == '已結案')
     st.markdown(f'<div class="mori-platform-heading">{platform_brand(account["platform"])}{status_badge("投放", phase)}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="mori-ad-dates">廣告走期　{html.escape(plan["start"])} ～ {html.escape(plan["end"])}</div>', unsafe_allow_html=True)
+    removed = removed_ad_rows([plan], accounts, {plan['id']: result})
+    if not plan.get('group_id'):
+        render_removed_ad_notice(removed)
+    elif removed:
+        st.caption(f'本計畫花費含 {removed_ad_count(removed)} 則已刪除／封存廣告，明細見專案上方說明。')
     if (result or {}).get('includes_today'):
         st.caption('即時數據・含今日未完整花費，平台可能延遲回報或回補。')
     st.markdown(funding_badge(settings, plan['id']), unsafe_allow_html=True)

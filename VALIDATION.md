@@ -49,3 +49,11 @@ Google 第一版僅提供行銷活動層級規則；未移植 Manus AI 聊天與
 - Repeated corrections use the latest total. A corrected transfer is cancelled by correcting its total to zero, rather than reversing an obsolete amount. Net transfer summaries show the corrected total.
 - Validation: 184 tests passed, including the Linkou 36,386→34,128 case (Linkou 25,872; festival 90,128 and deficit 2,038), repeated edits/cancellation, tampered history rejection, stale values and Streamlit preview/save/no-double-post behavior. All 71 release files verified.
 - No production budget transaction was submitted during implementation/testing.
+
+## 2026.11.23.48 — Explain paid deleted/archived ads beside affected projects
+
+- Add a conditional project-header badge and expandable explanation for paid Meta ads already included in successful project expense results and reported ARCHIVED/DELETED. Unaffected projects have no badge or empty explanation.
+- Details preserve ad IDs, reported status, raw cost, plan query period and status-check timestamp. Distinguish API status from Ads Manager wording and explicitly state that listed costs are already included, not an extra charge.
+- Reuse the existing expense snapshot; no extra API calls, attribution changes, ledger changes, or credential changes. Per-plan windows remain separate; the badge counts distinct ads.
+- Validation: 187 tests passed, including zero-spend/active/unverified/failed-result exclusion, exact raw precision, no mutation, duplicate rows/windows, conditional Streamlit rendering, Meta integer display and HTML escaping. All 71 release files verified.
+- Live production rendering and Meta API responses require confirmation after deployment.

@@ -1,6 +1,6 @@
 """Shared platform branding and truthful budget utilisation indicators."""
 import base64
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from functools import lru_cache
 from html import escape
 from pathlib import Path
@@ -42,3 +42,45 @@ def totals_progress(budget, spent, remaining):
         output.append(budget_progress(spent[currency] / amount if valid else None,
                                       '預算使用進度' + ('・' + currency if len(budget) > 1 else '')))
     return ''.join(output)
+
+
+def removed_ad_rows(plans, accounts, results):
+    """Explain only paid Meta ads already included in successful plan totals.
+
+    No extra API reads, date changes, or financial mutations. Keep each plan's
+    period separate rather than adding overlapping windows or currencies.
+    """
+    items, seen = [], set()
+    for plan in plans:
+        account = accounts.get(plan['account_key'], {})
+        result = results.get(plan['id']) or {}
+        if account.get('platform') != 'meta' or result.get('error'):
+            continue
+        for row in result.get('rows', []):
+            states = {row.get('current_status'), row.get('configured_status')}
+            state = 'DELETED' if 'DELETED' in states else 'ARCHIVED' if 'ARCHIVED' in states else None
+            if not state or not row.get('ad_id') or row.get('names_verified') is False:
+                continue
+            try:
+                amount = Decimal(str(row.get('spend_raw', row.get('spend'))))
+            except (InvalidOperation, TypeError, ValueError):
+                continue
+            if not amount.is_finite() or amount <= 0:
+                continue
+            since = row.get('date') or result.get('since')
+            until = row.get('date_stop') or result.get('until')
+            key = (plan['id'], str(row['ad_id']), since, until)
+            if key in seen:
+                continue
+            seen.add(key)
+            items.append({'平台': 'Meta', '平台計畫': plan['name'], '廣告帳號': account.get('name', ''),
+                          '廣告名稱': row.get('ad_name', ''), '廣告 ID': str(row['ad_id']),
+                          'API 狀態': '已刪除' if state == 'DELETED' else '已封存',
+                          '已計入花費': amount, '幣別': row.get('currency') or result.get('currency'),
+                          '花費查詢起日': since, '花費查詢迄日': until,
+                          '狀態核對時間': str(row.get('names_checked_at', '未提供'))[:19].replace('T', ' ')})
+    return items
+
+
+def removed_ad_count(items):
+    return len({(row['廣告帳號'], row['廣告 ID']) for row in items})
