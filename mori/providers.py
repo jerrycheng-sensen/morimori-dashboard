@@ -4,6 +4,7 @@ import json
 import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlencode
 
 import requests
 
@@ -19,6 +20,10 @@ def request_json(session, method, url, **kwargs):
     if not response.ok or (isinstance(data, dict) and data.get("error")):
         # 不回傳 request URL、原始錯誤或 response body，避免把 token 印進網頁或紀錄。
         code = data.get("error", {}).get("code", "") if isinstance(data, dict) and isinstance(data.get("error"), dict) else ""
+        if 'graph.facebook.com' in url and str(code) == '100':
+            raise AppError(f"Meta 查詢參數或指定物件無效（HTTP {response.status_code}，代碼 100）；這不是權杖失效的判定。")
+        if 'graph.facebook.com' in url and str(code) == '190':
+            raise AppError('Meta 權杖無效或已失效（代碼 190）；請至「帳號與串接」更新連線。')
         if 'graph.facebook.com' in url and str(code) in ('4', '17'):
             raise AppError(f"Meta API 請求量已達限制（代碼 {code}）；請稍後再按「重新讀取」。這不是權杖失效訊息。")
         raise AppError(f"廣告平台拒絕請求（HTTP {response.status_code}，代碼 {code}）；請檢查授權、帳號與 API 存取。")
@@ -54,7 +59,58 @@ class MetaProvider:
         self.headers = {"Authorization": f"Bearer {token}"}
 
     def _get(self, path, params):
+        if not path and 'ids' in params:
+            return self._read_objects(params)
         return request_json(self.session, "GET", f"{self.root}/{path}", headers=self.headers, params=params)
+
+    def _read_objects(self, params):
+        """Independent ID reads: an inaccessible old ad cannot poison its batch.
+
+        Keep tokens in the Authorization header and never follow response URLs.
+        The returned ID-keyed shape is shared with the name enrichment helper.
+        """
+        identifiers = params['ids'].split(',')
+        if not identifiers or len(identifiers) > 50 or any(not value.isdigit() for value in identifiers):
+            raise AppError('Meta 名稱查詢的 ID 或筆數不正確。')
+        fields = {key: value for key, value in params.items() if key != 'ids'}
+        batch = [{'method': 'GET', 'relative_url': identifier + '?' + urlencode(fields)}
+                 for identifier in identifiers]
+        try:
+            response = request_json(self.session, 'POST', self.root + '/', headers=self.headers,
+                                    data={'batch': json.dumps(batch), 'include_headers': 'false'})
+        except AppError as exc:
+            # Do not repeat every call when authentication or quota has failed.
+            if any(code in str(exc) for code in ('代碼 190', '代碼 4', '代碼 17')):
+                raise
+            return self._read_objects_individually(identifiers, fields)
+        if not isinstance(response, list) or len(response) != len(identifiers):
+            raise AppError('Meta 名稱查詢回傳筆數不符，未使用不完整名稱。')
+        result = {}
+        for identifier, item in zip(identifiers, response):
+            if not isinstance(item, dict):
+                continue
+            try:
+                body = json.loads(item.get('body', ''))
+            except (TypeError, ValueError):
+                continue
+            code = item.get('code')
+            if not isinstance(body, dict) or not isinstance(code, int):
+                continue
+            if 200 <= code < 300 or isinstance(body.get('error'), dict):
+                result[identifier] = body
+        return result
+
+    def _read_objects_individually(self, identifiers, fields):
+        result = {}
+        for identifier in identifiers:
+            try:
+                result[identifier] = self._get(identifier, fields)
+            except AppError as exc:
+                if any(code in str(exc) for code in ('代碼 190', '代碼 4', '代碼 17')):
+                    raise
+                # Redacted exception only, never retain response bodies or tokens.
+                result[identifier] = {'lookup_issue': str(exc)}
+        return result
 
     def fetch(self, account, start, end):
         return self._fetch(account, start, end, budget=False)

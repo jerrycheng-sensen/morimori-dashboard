@@ -32,3 +32,11 @@ Google 第一版僅提供行銷活動層級規則；未移植 Manus AI 聊天與
 - Preserve original Insights names and raw Decimal costs; no credential, invoice, budget, or spend-period changes.
 - Validation: 167 automated tests passed, including partial-name attribution, all/any ambiguity, scalar fallback, and explicit-ID assignment. Release manifest: all 71 files present.
 - Live user-token/API behavior was not verified in the local test environment.
+
+## 2026.11.23.46 — Isolate current-name API queries
+
+- Replace the root multi-ID GET with independent read-only GET operations carried in Graph API batches (at most 50), decoded in request order. One object error no longer invalidates other objects.
+- If the batch transport rejects a request, retry direct object-ID GETs; do not fan out authentication/quota failures. Verify object/account IDs before using names, retaining unknown states for genuinely unavailable metadata.
+- Distinguish Meta code 100 (query/object) from code 190 (token); never print original API messages or credentials.
+- Validation: 172 automated tests passed, including real HTTP envelope shape, mixed success/failure batch responses, direct-ID transport fallback, and malformed response rejection. Monetary calculations, raw precision, budgets, invoices, and credentials unchanged.
+- The user's live Meta responses still require confirmation after deployment; mocked tests do not prove account access.

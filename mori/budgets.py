@@ -12,7 +12,7 @@ from mori.core import AppError
 
 
 def configuration_key(settings):
-    return hashlib.sha256(json.dumps(['meta-current-names-v6-scoped-verification', settings.get('projects', []), settings.get('project_groups', []),
+    return hashlib.sha256(json.dumps(['meta-current-names-v7-independent-reads', settings.get('projects', []), settings.get('project_groups', []),
                                      settings.get('accounts', [])], sort_keys=True).encode()).hexdigest()
 
 

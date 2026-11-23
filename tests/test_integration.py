@@ -358,7 +358,7 @@ def test_meta_budget_reads_whole_period_keeps_raw_cost_and_same_named_ads():
     session = Session([Response({'currency': 'TWD', 'timezone_name': 'Asia/Taipei'}),
                        Response({'data': [item], 'paging': {'next': 'untrusted', 'cursors': {'after': 'next'}}}),
                        Response({'data': [{**item, 'ad_id': '102', 'spend': '456.78'}]}),
-                       Response({key:{'id':key,'account_id':'1234567890','name':'感謝祭第5彈','campaign':{'id':'1','name':'活動'},'adset':{'id':'2','name':'群組'}} for key in ('101','102')})])
+                       Response([{'code':200, 'body':json.dumps({'id':key,'account_id':'1234567890','name':'感謝祭第5彈','campaign':{'id':'1','name':'活動'},'adset':{'id':'2','name':'群組'}})} for key in ('101','102')])])
     report = MetaProvider({'META_ACCESS_TOKEN': 'secret'}, session).fetch_budget(account(), '2026-09-29', '2026-11-18')
     assert report['spend_basis'] == 'meta_ad_whole_period'
     assert len(report['rows']) == 2  # Equal names do not make them the same ad.
@@ -414,3 +414,49 @@ def test_google_header_fetches_customer_cost_in_integer_micros(monkeypatch):
     assert result['spend_raw'] == '143479.530001'
     assert 'FROM customer' in queries[1] and 'segments.date BETWEEN' in queries[1]
     assert 'conversion' not in queries[1] and 'campaign' not in queries[1]
+
+
+@pytest.mark.parametrize('code,expected', [(100,'參數或指定物件無效'), (190,'權杖無效或已失效')])
+def test_meta_query_error_distinguishes_invalid_query_from_token(code, expected):
+    from mori.providers import request_json
+    session=Session([Response({'error':{'code':code,'message':'PRIVATE_TOKEN'}},status=500)])
+    with pytest.raises(AppError,match=expected) as error:
+        request_json(session,'GET','https://graph.facebook.com/v26.0/101')
+    assert 'PRIVATE_TOKEN' not in str(error.value) and '檢查授權' not in str(error.value)
+
+
+def test_meta_names_use_independent_gets_and_one_error_does_not_hide_other_ad():
+    from urllib.parse import parse_qs, urlsplit
+    good={'id':'101','account_id':'1234567890','name':'感謝祭第5彈',
+          'campaign':{'id':'1','name':'轉換'},'adset':{'id':'2','name':'新客'}}
+    session=Session([Response([{'code':200,'body':json.dumps(good)},
+                              {'code':400,'body':json.dumps({'error':{'code':100,'message':'PRIVATE_TOKEN'}})}])])
+    provider=MetaProvider({'META_ACCESS_TOKEN':'PRIVATE_TOKEN'},session)
+    result=provider._get('',{'ids':'101,102','fields':'id,name,campaign{id,name}'})
+    assert result['101']==good and result['102']['error']['code']==100
+    method,url,args=session.calls[0]
+    assert method=='POST' and url=='https://graph.facebook.com/v26.0/'
+    batch=json.loads(args['data']['batch'])
+    assert len(batch)==2 and all(item['method']=='GET' for item in batch)
+    assert [urlsplit(item['relative_url']).path for item in batch]==['101','102']
+    assert parse_qs(urlsplit(batch[0]['relative_url']).query)['fields']==['id,name,campaign{id,name}']
+    assert 'PRIVATE_TOKEN' not in json.dumps(args['data'])
+
+
+def test_meta_batch_transport_failure_falls_back_to_direct_id_reads():
+    session=Session([Response({'error':{'code':100,'message':'PRIVATE_TOKEN'}},status=500),
+                     Response({'id':'101','name':'新名稱'}),
+                     Response({'error':{'code':100,'message':'PRIVATE_TOKEN'}},status=400)])
+    provider=MetaProvider({'META_ACCESS_TOKEN':'PRIVATE_TOKEN'},session)
+    result=provider._get('',{'ids':'101,102','fields':'id,name'})
+    assert result['101']['name']=='新名稱'
+    assert 'lookup_issue' in result['102'] and 'PRIVATE_TOKEN' not in result['102']['lookup_issue']
+    assert [call[1] for call in session.calls[1:]]==['https://graph.facebook.com/v26.0/101',
+                                                                'https://graph.facebook.com/v26.0/102']
+
+
+def test_meta_malformed_batch_cannot_shift_names_between_ids():
+    session=Session([Response([{'code':200,'body':'{}'}])])
+    provider=MetaProvider({'META_ACCESS_TOKEN':'secret'},session)
+    with pytest.raises(AppError,match='筆數不符'):
+        provider._get('',{'ids':'101,102','fields':'id,name'})

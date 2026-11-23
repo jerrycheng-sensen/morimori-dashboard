@@ -80,6 +80,9 @@ def refresh_names(get, account, rows):
         identifier = str(row.get('ad_id') or '')
         data = current.get(identifier)
         row['name_lookup_issue'] = issues.get(identifier, '未取得可驗證的最新名稱或所屬帳號資料。')
+        if isinstance(data, dict) and data.get('lookup_issue'):
+            row['name_lookup_issue'] = data['lookup_issue']
+            continue
         if not isinstance(data, dict) or data.get('error'):
             error = data.get('error') if isinstance(data, dict) else None
             if isinstance(error, dict):
