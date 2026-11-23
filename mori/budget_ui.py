@@ -15,7 +15,7 @@ from mori.budgets import (collect_spend, configuration_key, plan_summary, save_g
 from mori.core import AppError, TAIPEI
 from mori.money_display import money_text, money_metric, money_note, money_table, plan_platform
 from mori.budget_ledger import balance, impacts
-from mori.budget_visuals import platform_brand, budget_progress, removed_ad_rows, removed_ad_count
+from mori.budget_visuals import platform_brand, budget_progress, removed_ad_rows, removed_ad_count, preview_campaign_totals
 from mori.budget_ledger_ui import records, render_ledger
 
 
@@ -208,6 +208,33 @@ def render_removed_ad_notice(items):
         st.caption('狀態依 Meta API 最近一次回報；API 的「已封存」與廣告後台的「已刪除」可能顯示不同，核對請以廣告 ID 為準。查詢日期不是廣告實際開關日期。')
 
 
+def render_google_preview(preview):
+    """Present one already computed preview; never fetch or save from rendering."""
+    rows = preview['rows']
+    totals = preview_campaign_totals(rows)
+    with st.container(border=True):
+        st.markdown('### 本次條件認列結果')
+        st.caption(f"認列期間：{preview['since']} ～ {preview['until']}｜尚未儲存設定")
+        a, b, c, d = st.columns(4)
+        money_metric(a, '認列總花費', preview.get('spend_raw', preview['spend']), 'google',
+                     prefix=preview['currency'] + ' ')
+        b.metric('符合的廣告／素材群組', sum(r['廣告／素材群組數'] for r in totals))
+        c.metric('總曝光', f"{sum(r['曝光'] for r in totals):,}")
+        d.metric('總點擊', f"{sum(r['點擊'] for r in totals):,}")
+        st.caption('以上為符合目前條件、指定廣告走期內的合計；同一筆花費即使符合多個條件，也只計算一次。')
+        if totals:
+            st.markdown('**各廣告活動花費小計**')
+            table = pd.DataFrame(totals)[['廣告活動', '廣告活動 ID', '廣告／素材群組數', '認列花費', '幣別', '曝光', '點擊']]
+            money_table(st, table, ['google'] * len(table), {'認列花費'})
+        else:
+            st.info('沒有符合條件的廣告，請檢查走期與文字。')
+    for warning in preview.get('warnings', []):
+        st.warning(warning)
+    if rows:
+        with st.expander('查看逐日廣告／素材群組明細'):
+            money_table(st, pd.DataFrame(rows), ['google'] * len(rows), {'spend', 'spend_raw'})
+
+
 def select_budget_section(section):
     st.session_state.budget_section = section
 
@@ -371,13 +398,7 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
                             if preview.get('not_started'):
                                 st.info('廣告尚未開始，尚無可預覽的資料。')
                             else:
-                                money_note(st, f"預覽花費 {preview['currency']} {money_text(preview['spend'], accounts[account_key]['platform'])}；尚未儲存設定。")
-                                for warning in preview.get('warnings', []):
-                                    st.warning(warning)
-                                if preview['rows']:
-                                    money_table(st, pd.DataFrame(preview['rows']), [accounts[account_key]['platform']] * len(preview['rows']), {'spend', 'spend_raw'})
-                                else:
-                                    st.info('沒有符合條件的廣告，請檢查走期與文字。')
+                                render_google_preview(preview)
                         except (AppError, ValueError) as exc:
                             st.error(str(exc))
                     if st.form_submit_button('儲存平台計畫', type='primary', width='stretch'):

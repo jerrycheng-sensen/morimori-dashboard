@@ -57,3 +57,11 @@ Google 第一版僅提供行銷活動層級規則；未移植 Manus AI 聊天與
 - Reuse the existing expense snapshot; no extra API calls, attribution changes, ledger changes, or credential changes. Per-plan windows remain separate; the badge counts distinct ads.
 - Validation: 187 tests passed, including zero-spend/active/unverified/failed-result exclusion, exact raw precision, no mutation, duplicate rows/windows, conditional Streamlit rendering, Meta integer display and HTML escaping. All 71 release files verified.
 - Live production rendering and Meta API responses require confirmation after deployment.
+
+## 2026.11.23.49 — Readable Google attribution preview totals
+
+- Replace the small preview expense caption with a bordered result summary: prominent total spend, exact query dates, distinct ad/asset-group count, impressions and clicks. Retain the unsaved-setting notice.
+- Show campaign-level expense subtotals by immutable campaign ID/currency; keep daily raw details in a separate expander. Group already matched result rows, never sum individual rule matches. Preserve monetary Decimal precision until display and Google small decimal formatting.
+- No changes to attribution rules, provider queries, stored project settings, expense calculations or financial records.
+- Validation: 190 automated tests passed, including preview-then-save integration, exact raw amount aggregation, repeated-day unit counts, distinct same-name campaigns, escaped names, Google decimal rendering and zero-match results. All 71 release files verified.
+- Live user-token results and production rendering are not established by mocked tests.

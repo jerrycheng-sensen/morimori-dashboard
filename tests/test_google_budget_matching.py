@@ -102,7 +102,7 @@ render_budgets(s, fetch, persist)
     next(x for x in app.date_input if x.label == '廣告結束日').set_value(date(2026,11,18))
     next(x for x in app.button if x.label == '預覽認列廣告（不儲存）').click().run()
     assert not app.exception and not app.error
-    assert any('預覽花費' in x.value and '90<span class="mori-money-fraction">.00</span>' in x.value for x in app.markdown)
+    assert any('認列總花費' in x.value and '90<span class="mori-money-fraction">.00</span>' in x.value for x in app.markdown)
     assert 'saved' not in app.session_state
     next(x for x in app.button if x.label == '儲存平台計畫').click().run()
     assert not app.exception and not app.error

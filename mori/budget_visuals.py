@@ -84,3 +84,25 @@ def removed_ad_rows(plans, accounts, results):
 
 def removed_ad_count(items):
     return len({(row['廣告帳號'], row['廣告 ID']) for row in items})
+
+
+def preview_campaign_totals(rows):
+    """Summarise the already matched rows, never add totals per matching rule."""
+    groups = {}
+    for row in rows:
+        key = (row.get('campaign_id', ''), row.get('currency', ''))
+        group = groups.setdefault(key, {'廣告活動': row.get('campaign_name', ''),
+                                       '廣告活動 ID': key[0], '幣別': key[1],
+                                       '認列花費': Decimal(0), '曝光': 0, '點擊': 0, '_units': set()})
+        group['認列花費'] += Decimal(str(row.get('spend_raw', row.get('spend', 0))))
+        group['曝光'] += int(row.get('impressions') or 0)
+        group['點擊'] += int(row.get('clicks') or 0)
+        kind = 'asset_group' if row.get('asset_group_id') else 'ad'
+        unit = row.get('asset_group_id') or row.get('ad_id')
+        if unit:
+            group['_units'].add((kind, str(unit)))
+    output = []
+    for group in groups.values():
+        group['廣告／素材群組數'] = len(group.pop('_units'))
+        output.append(group)
+    return sorted(output, key=lambda r: (str(r['幣別']), -r['認列花費'], str(r['廣告活動 ID'])))
