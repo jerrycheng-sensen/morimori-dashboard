@@ -187,7 +187,7 @@ render_ledger(st.session_state['settings'], None, persist)
     app.radio(key='budget_tx_kind').set_value('修正轉移金額').run()
     assert not app.exception and not calls
     next(x for x in app.number_input if x.label=='正確的轉移總額').set_value(34128.).run()
-    captions=' '.join(x.value for x in app.caption)
+    captions=' '.join(x.value for x in list(app.caption) + list(app.markdown))
     assert '90,128' in captions and '-2,038' in captions and not calls
     next(x for x in app.text_input if x.label=='異動原因／用途').set_value('林口補認列歷史花費，修正轉出額')
     next(x for x in app.checkbox if x.label.startswith('已核對相關專案')).check()

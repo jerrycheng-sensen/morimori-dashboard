@@ -112,7 +112,7 @@ def transfer(settings, source_id, target_id, amount, effective_on, reason, resul
     local_day = (now or datetime.now(TAIPEI)).astimezone(TAIPEI).date()
     available = (money(balance(settings, source_id, local_day)['adjusted']) - cost(source['spend'])).quantize(Decimal('.01'), rounding=ROUND_FLOOR)
     if amount > available:
-        raise AppError(f'轉移金額超過來源可用結餘（依本次花費資料：{available:,.2f}）。')
+        raise AppError(f'轉移金額超過來源可用結餘（依本次花費資料：${available:,.2f}）。')
     entry = base_entry(settings, effective_on, reason, operation_id, now)
     entry.update({'kind': 'transfer', 'source_id': source_id, 'target_id': target_id,
                   'source_label': plan_label(settings, source_id), 'target_label': plan_label(settings, target_id),

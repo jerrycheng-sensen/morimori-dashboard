@@ -81,3 +81,10 @@ Google 第一版僅提供行銷活動層級規則；未移植 Manus AI 聊天與
 - All-project view opens the cross-project summary; a selected project places its name and details first with the global summary available in a collapsed section. Other editing/ledger/invoice sections retain a collapsible summary and their existing forms.
 - Preserve cached reports, financial calculations, invoice entry points, project/year/status semantics and selected button states. No project, invoice or ledger data was submitted during implementation.
 - Validation: full 194-test suite passed; updated layout/navigation/cache integration test passed after extending it to check rail-before-summary order and project/all-project switching with no additional account reads. All 71 release files verified. Browser viewport/sticky behavior still requires live deployment verification.
+
+## 2026.11.24.52 — Consistent dollar symbols across monetary displays
+
+- Apply a single dollar symbol through shared monetary text/HTML/metric/table formatters, removing redundant TWD prefixes. Keep currency codes in underlying records and explicit account/invoice metadata; no conversion or financial calculation changes.
+- Cover project/combined/platform KPIs, preview subtotals, invoices, transfer records, monetary notes/errors, overview spend/CPA/CPC metrics and sortable tables, rule thresholds/candidates, and chart axes/tooltips. Monetary input controls use a dollar icon while preserving native numeric editing (currency literals in number_input format strings are unsupported).
+- Preserve Meta integer and Google/combined two-decimal presentation, smaller/lighter HTML fractions, unknown placeholders, percentages/counts/IDs/dates, numeric sorting and raw exports. The diagnostic audit keeps its full raw precision with a dollar symbol.
+- Validation: full existing suite 194 passed; two added formatting/data-integrity tests passed (196 total); dashboard chart tests passed after platform-specific currency format updates. All 71 release files verified. No production financial data, credentials or settings submitted.

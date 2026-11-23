@@ -13,7 +13,7 @@ import streamlit as st
 from mori.budgets import (collect_spend, configuration_key, plan_summary, save_group,
                           save_plan, time_progress, group_summary, refresh_due, period_state, advertising_state)
 from mori.core import AppError, TAIPEI
-from mori.money_display import money_text, money_metric, money_note, money_table, plan_platform
+from mori.money_display import money_text, money_metric, money_note, money_table, plan_platform, styled_money_frame
 from mori.budget_ledger import balance, impacts
 from mori.budget_visuals import platform_brand, budget_progress, removed_ad_rows, removed_ad_count, preview_campaign_totals
 from mori.budget_ledger_ui import records, render_ledger
@@ -253,7 +253,7 @@ def render_google_preview(preview):
         else:
             st.info('沒有符合條件的廣告，請檢查走期與文字。')
     for warning in preview.get('warnings', []):
-        st.warning(warning)
+        st.warning(warning.replace('$', r'\$'))
     render_google_audit(preview)
     if rows:
         with st.expander('查看逐日廣告／素材群組明細'):
@@ -267,7 +267,7 @@ def render_google_audit(result):
         st.caption(f"帳號時區：{result.get('timezone') or '未提供'}｜讀取開始：{result.get('read_started') or '未提供'}｜讀取完成：{result.get('read_finished') or '未提供'}")
         st.caption('活動與明細差額＝活動回報－全部明細；條件未納入花費＝全部明細－本次認列。差額不會自動補進專案。表格保留原始小數供核對。')
         table = pd.DataFrame(result['audit'])
-        st.dataframe(table, hide_index=True, width='stretch')
+        st.dataframe(styled_money_frame(table, {'活動回報花費', '全部明細花費', '條件認列花費', '條件未納入花費', '活動與明細差額'}, raw=True), hide_index=True, width='stretch')
 
 
 def select_budget_section(section):
@@ -343,7 +343,7 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
                             st.session_state.pending_budget_group = next(g['id'] for g in updated['project_groups'] if g['id'] not in groups) if not group else group['id']
                             persist(updated, notice='專案資料已儲存。接著在下方新增各平台投放計畫。')
                         except (AppError, ValueError) as exc:
-                            st.error(str(exc))
+                            st.error(str(exc).replace('$', r'\$'))
                 editor_step('02', '平台投放計畫', '每個廣告帳號各一筆：預算、廣告走期與認列條件')
                 pending_plan = st.session_state.pop('pending_budget_plan', None)
                 if pending_plan and any(p['id'] == pending_plan for p in plans):
@@ -377,7 +377,7 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
                     ad_start = a.date_input('廣告開始日（可含預熱）', date.fromisoformat(plan['start']) if plan else today)
                     ad_end = b.date_input('廣告結束日', date.fromisoformat(plan['end']) if plan else today)
                     locked_budget = any(plan.get('id') in impacts(t) for t in settings.get('budget_transactions', []))
-                    budget = st.number_input('平台投放預算（與廣告帳號同幣別，不另加稅／服務費）', min_value=0., value=float(plan.get('budget', 0)), step=1000., format='%.2f' if google_plan else '%.0f', disabled=locked_budget)
+                    budget = st.number_input('平台投放預算（與廣告帳號同幣別，不另加稅／服務費）', min_value=0., value=float(plan.get('budget', 0)), step=1000., icon=':material/attach_money:', format='%.2f' if google_plan else '%.0f', disabled=locked_budget)
                     if locked_budget:
                         st.caption('已有異動紀錄，原始預算已保留；請到「預算調動與紀錄」辦理追加／減列。')
                     st.caption('0 代表預算尚未設定，總覽會顯示「未設定」，不會計算花費百分比。')
@@ -436,7 +436,7 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
                             else:
                                 render_google_preview(preview)
                         except (AppError, ValueError) as exc:
-                            st.error(str(exc))
+                            st.error(str(exc).replace('$', r'\$'))
                     if st.form_submit_button('儲存平台計畫', type='primary', width='stretch'):
                         try:
                             if not owner and not plan:
@@ -449,7 +449,7 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
                             st.session_state.pending_budget_plan = next(p['id'] for p in updated['projects'] if p['id'] not in {x['id'] for x in plans}) if not plan else plan['id']
                             persist(updated, notice='平台計畫已儲存。預算總覽會自動讀取最新花費。')
                         except (AppError, ValueError) as exc:
-                            st.error(str(exc))
+                            st.error(str(exc).replace('$', r'\$'))
                 st.download_button('匯出設定備份（不含權杖）', json.dumps(settings, ensure_ascii=False, indent=2),
                                    'mori-settings.json', on_click='ignore')
 
@@ -639,7 +639,7 @@ def render_group_totals(plans, results, today, settings):
     if data['reason']:
         st.caption(data['reason'])
     else:
-        st.caption(f"{data['currency']}｜以下平台金額的專案合計，已包含預算轉入／轉出。")
+        st.caption(f"以下平台金額的專案合計，已包含預算轉入／轉出。")
 
 
 def render_plan(plan, accounts, result, today, settings, compact=False):
@@ -669,7 +669,7 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
             st.warning('發票登錄幣別與平台回報不一致，請至「儲值與發票」核對；不同幣別不相加。')
         elif data['budget'] > 0:
             registered = proof['totals'][data['currency']]
-            money_note(st, f"發票認列／可用預算：{data['currency']} {money_text(registered, account['platform'])}／{money_text(data['budget'], account['platform'])}；有發票不代表全額到位。")
+            money_note(st, f"發票認列／可用預算：{money_text(registered, account['platform'])}／{money_text(data['budget'], account['platform'])}；有發票不代表全額到位。")
     if not plan.get('group_id'):
         st.caption('平台計畫：' + plan['name'])
     warnings = (result or {}).get('warnings', [])
@@ -678,7 +678,7 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
     if any('未提供全部' in w for w in warnings):
         st.warning('部分廣告缺少選定的文案欄位；請展開下方明細核對未納入的花費。')
     if result and result.get('error'):
-        st.error(account['name'] + '：' + result['error'])
+        st.error((account['name'] + '：' + result['error']).replace('$', r'\$'))
     if account['platform'] == 'google':
         render_google_audit(result)
     funds = balance(settings, plan['id'], today)
@@ -711,12 +711,12 @@ def render_plan(plan, accounts, result, today, settings, compact=False):
     with st.expander(detail_title):
         st.caption(f"廣告帳號：{account['name']}｜原平台計畫名稱：{plan['name']}")
         for warning in warnings:
-            st.warning(warning)
+            st.warning(warning.replace('$', r'\$'))
         if result and result.get('until'):
-            st.caption(f"{data['currency'] or '帳號幣別'}｜資料 {result['since']} ～ {result['until']}｜時區 {result.get('timezone') or '未回傳'}")
+            st.caption(f"資料 {result['since']} ～ {result['until']}｜時區 {result.get('timezone') or '未回傳'}")
             rows = result['rows']
             if result.get('spend_basis') == 'meta_ad_whole_period':
-                st.caption(f"核對口徑：每則廣告的整段走期花費｜{len(rows)} 則廣告｜加總 {result['currency']} {money_text(result['spend_raw'], account['platform'])}。計算保留 API 原始精度，下載明細可核對。")
+                st.caption(f"核對口徑：每則廣告的整段走期花費｜{len(rows)} 則廣告｜加總 {money_text(result['spend_raw'], account['platform'])}。計算保留 API 原始精度，下載明細可核對。")
             if rows:
                 df = pd.DataFrame(rows)
                 columns = [k for k in ['date', 'date_stop', 'channel', 'ad_type', 'attribution_unit', 'campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'ad_id', 'ad_name', 'insights_ad_name', 'name_source', 'names_checked_at', 'current_status', 'asset_group_name', 'asset_group_id', 'headlines', 'descriptions', 'paths', 'spend_raw', 'spend', 'currency'] if k in df]

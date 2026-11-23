@@ -22,7 +22,7 @@ def format_totals(values, compact=False, platform='combined'):
         return '—'
     if compact and len(values) > 1:
         return '分幣別列示'
-    return '；'.join((f'{cur} {money_text(amount, platform)}' if not cur.startswith('?') else f'{money_text(amount, platform)}（帳號幣別待確認）')
+    return '；'.join((f'{money_text(amount, platform)}' if not cur.startswith('?') else f'{money_text(amount, platform)}（帳號幣別待確認）')
                     for cur, amount in sorted(values.items()))
 
 
@@ -34,7 +34,7 @@ def kpi_card(label, values, note, kind):
     elif not values:
         numbers = '<strong class="mori-kpi-empty">尚未建立</strong>'
     else:
-        numbers = ''.join('<div class="mori-kpi-number"><small>' + html.escape(cur if not cur.startswith('?') else '幣別待確認') +
+        numbers = ''.join('<div class="mori-kpi-number"><small>' + html.escape('' if cur == 'TWD' else cur if not cur.startswith('?') else '幣別待確認') +
                           '</small><strong>' + money_html(amount) + '</strong></div>' for cur, amount in sorted(values.items()))
     return '<article class="mori-kpi-card ' + kind + state + '"><h3>' + label + '</h3>' + numbers + '<p>' + note + '</p></article>'
 

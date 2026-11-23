@@ -8,7 +8,7 @@ import streamlit as st
 from mori.budget_ledger import adjustment, balance, plan_label, reverse, transfer, correct_transfer, transfer_amount
 from mori.budgets import collect_spend, configuration_key
 from mori.core import AppError, TAIPEI
-from mori.money_display import money_metric, money_text, money_table, plan_platform
+from mori.money_display import money_metric, money_text, money_note, money_table, plan_platform
 
 
 def records(settings, plan_id=None):
@@ -90,7 +90,7 @@ def render_ledger(settings, fetch, persist):
         if options:
             def entry_label(key):
                 t = next(t for t in entries if t['id'] == key)
-                return f"{t['effective_on']}｜{t.get('source_label', '')} → {t.get('target_label', '')}｜{t['currency']} {money_text(t['amount'], transaction_platform(t))}｜{t['reason']}"
+                return f"{t['effective_on']}｜{t.get('source_label', '')} → {t.get('target_label', '')}｜{money_text(t['amount'], transaction_platform(t))}｜{t['reason']}"
             entry_id = st.selectbox('選擇要沖回的原紀錄', options, format_func=entry_label, key='budget_reverse_entry')
         else:
             st.info('目前沒有可沖回的異動。')
@@ -98,7 +98,7 @@ def render_ledger(settings, fetch, persist):
     if ready:
         if kind == '修正轉移金額':
             amount = st.number_input('正確的轉移總額', min_value=0., value=float(previous), step=100.,
-                                     format='%.0f' if transaction_platform(old) == 'meta' else '%.2f',
+                                     icon=':material/attach_money:', format='%.0f' if transaction_platform(old) == 'meta' else '%.2f',
                                      key='budget_correct_amount_' + entry_id + '_' + str(previous))
             change = amount - float(previous)
             direction = lambda delta: ('增加 ' if delta >= 0 else '減少 ') + money_text(abs(delta), transaction_platform(old))
@@ -110,14 +110,14 @@ def render_ledger(settings, fetch, persist):
                     projected = balance(settings, pid)['adjusted'] + delta
                     remaining = projected - result['spend']
                     st.write(label(pid))
-                    st.caption('修正後預算 ' + money_text(projected, plan_platform(settings, pid)) +
+                    money_note(st, '修正後預算 ' + money_text(projected, plan_platform(settings, pid)) +
                                '｜目前花費 ' + money_text(result['spend'], plan_platform(settings, pid)) +
                                '｜結餘 ' + money_text(remaining, plan_platform(settings, pid)))
             st.warning('修正後若花費超過預算，會如實顯示超支；不要求先追加或調入預算。')
         with st.form('budget_transaction_' + kind):
             if kind != '修正轉移金額':
                 amount = st.number_input('異動金額（追加為正、減列為負）' if kind == '追加／減列' else '轉移金額',
-                                     min_value=None if kind == '追加／減列' else 0., value=0., step=100., format='%.0f' if all(plan_platform(settings, pid) == 'meta' for pid in [source_id, target_id] if pid) else '%.2f') if kind != '沖回紀錄' else None
+                                     min_value=None if kind == '追加／減列' else 0., value=0., step=100., icon=':material/attach_money:', format='%.0f' if all(plan_platform(settings, pid) == 'meta' for pid in [source_id, target_id] if pid) else '%.2f') if kind != '沖回紀錄' else None
             effective = st.date_input('生效日期', today, max_value=today) if kind not in ('沖回紀錄', '修正轉移金額') else today
             reason = st.text_input('異動原因／用途', placeholder='例如：林口結餘轉供感謝祭北部加強')
             confirmed = st.checkbox('已核對相關專案的廣告歸類；確認儲存這筆預算異動',
@@ -150,7 +150,7 @@ def render_ledger(settings, fetch, persist):
                             view['at'] = datetime.now(TAIPEI).isoformat()
                         persist(updated, notice='預算異動已入帳，來源與接收計畫已同步更新。', keep_budget_view=True)
                 except (AppError, ValueError) as exc:
-                    st.error(str(exc))
+                    st.error(str(exc).replace('$', r'\$'))
     st.subheader('完整異動紀錄')
     selected = st.selectbox('依專案／平台查紀錄', ['all'] + list(plans),
                             format_func=lambda k: '全部紀錄' if k == 'all' else label(k), key='budget_ledger_filter')

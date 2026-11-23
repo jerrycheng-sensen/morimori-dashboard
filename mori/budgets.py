@@ -130,7 +130,7 @@ def collect_spend(plans, accounts, fetch, today):
             if incomplete:
                 formats = '、'.join(sorted({r.get('ad_type', 'UNKNOWN') for r in incomplete}))
                 amount = sum(float(r['spend']) for r in incomplete)
-                warnings.append(f'有 {len(incomplete)} 筆廣告／日資料未提供全部選定的文案欄位，未命中且未納入花費 {report["currency"]} {amount:,.2f}（格式：{formats}）。可改用廣告活動、廣告群組或 ID 認列；缺少路徑不代表零花費。')
+                warnings.append(f'有 {len(incomplete)} 筆廣告／日資料未提供全部選定的文案欄位，未命中且未納入花費 ${amount:,.2f}（格式：{formats}）。可改用廣告活動、廣告群組或 ID 認列；缺少路徑不代表零花費。')
             if any(c['field'] in ('adset_name', 'ad_id') for c in rules) and any(r.get('channel') == 'PERFORMANCE_MAX' for r in report['rows']):
                 warnings.append('PMax 使用素材群組，不是一般廣告群組或單一廣告 ID；如需指定 PMax，請選素材群組名稱／ID 或廣告活動。')
         currencies = {r['currency'] for r in rows}

@@ -10,10 +10,16 @@ import streamlit as st
 
 from mori.core import TAIPEI
 from mori.runner import conversion_label
+from mori.money_display import money_metric, styled_money_frame
 
 PLATFORMS = {'meta': 'Meta', 'google': 'Google Ads'}
 
 CSS = '''<style>
+.mori-money-fraction{font-size:.58em!important;font-weight:500!important;opacity:.6;letter-spacing:0;white-space:nowrap;}
+.mori-money-metric{padding:20px 18px;border:1px solid #dedbd4;border-radius:14px;background:#fffefa;min-width:0;}
+.mori-money-label{font-size:15px;color:#5c6b5f;margin-bottom:10px;}
+.mori-money-value{font-size:clamp(24px,2.15vw,32px);font-weight:750;line-height:1.35;color:#17421E;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.mori-money-note{font-size:14px!important;line-height:1.8;color:#718075;margin:8px 0;}
 :root{--mori-brand:#17421E;--mori-ink:#142b1c;--mori-accent:#b8e572;}
 html,body,[data-testid="stApp"]{font-family:"Microsoft JhengHei","微軟正黑體",sans-serif!important;}
 [data-testid="stApp"] *:not([data-testid="stIconMaterial"]):not([class*="material-symbols"]){font-family:"Microsoft JhengHei","微軟正黑體",sans-serif!important;}
@@ -111,7 +117,8 @@ def trend_data(part, field):
     return values.rename('value').reset_index()
 
 
-def chart_spec(title, color, money=False):
+def chart_spec(title, color, money=False, platform='combined'):
+    money_format = '$,.0f' if platform == 'meta' else '$,.2f'
     return {
         'height': 215,
         'layer': [
@@ -122,9 +129,9 @@ def chart_spec(title, color, money=False):
             'x': {'field': 'date', 'type': 'temporal', 'title': None,
                   'axis': {'format': '%m/%d', 'grid': False, 'labelAngle': 0, 'tickCount': 6}},
             'y': {'field': 'value', 'type': 'quantitative', 'title': None,
-                  'scale': {'zero': True}, 'axis': {'format': ',.0f' if money else ',.1~f', 'tickCount': 4}},
+                  'scale': {'zero': True}, 'axis': {'format': money_format if money else ',.1~f', 'tickCount': 4}},
             'tooltip': [{'field': 'date', 'type': 'temporal', 'title': '日期', 'format': '%Y/%m/%d'},
-                        {'field': 'value', 'type': 'quantitative', 'title': title, 'format': ',.2f'}],
+                        {'field': 'value', 'type': 'quantitative', 'title': title, 'format': money_format if money else ',.2f'}],
         },
         'config': {'font': 'Microsoft JhengHei', 'view': {'stroke': None}, 'axis': {'domain': False, 'ticks': False,
                    'gridColor': '#edf1ee', 'labelColor': '#7d8b82', 'labelPadding': 10},
@@ -171,26 +178,28 @@ def render_report(view, keys, period, settings, names, account_by_key):
     for tab, platform in zip(tabs, available):
         with tab:
             for currency, part in shown[shown.platform == platform].groupby('currency'):
-                st.caption(f'{PLATFORMS.get(platform, platform)}　／　{currency}')
+                st.caption(PLATFORMS.get(platform, platform) + (f'／{currency}' if currency != 'TWD' else ''))
                 metric = totals(part)
                 a, b, c, d = st.columns(4)
-                a.metric('廣告花費', f"{metric['spend']:,.2f}")
+                money_metric(a, '廣告花費', metric['spend'], platform)
                 b.metric('訂位（平台歸因）', f"{metric['bookings']:,.2f}".rstrip('0').rstrip('.') if metric['bookings'] is not None else '尚未設定')
-                c.metric('訂位 CPA', f"{metric['cpa']:,.2f}" if metric['cpa'] is not None else '—')
+                money_metric(c, '訂位 CPA', metric['cpa'], platform)
                 d.metric('Meta 連結點擊' if platform == 'meta' else '廣告點擊', f"{metric['clicks']:,.0f}")
                 left, right = st.columns(2)
                 for container, field, title, color in [(left, 'spend', '花費趨勢', '#17421E'),
                                                         (right, 'conversions', '訂位趨勢', '#168578')]:
                     with container, st.container(border=True):
                         st.subheader(title)
-                        st.caption(currency if field == 'spend' else '依平台指定事件統計')
-                        st.vega_lite_chart(trend_data(part, field), chart_spec(title, color, field == 'spend'), width='stretch')
+                        st.caption('金額（$）' if field == 'spend' else '依平台指定事件統計')
+                        st.vega_lite_chart(trend_data(part, field), chart_spec(title, color, field == 'spend', platform), width='stretch')
     summary = summary_table(shown, names)
     with st.container(border=True):
         st.subheader('廣告活動成效')
         st.caption(f'{len(summary)} 個活動　·　點選欄位標題排序；表格右上角可搜尋')
-        st.dataframe(summary.sort_values('花費', ascending=False), hide_index=True, width='stretch',
-                     column_config={name: st.column_config.NumberColumn(format='%.2f') for name in ['花費', '訂位', 'CPA', 'CPC', 'CTR %']})
+        ordered = summary.sort_values('花費', ascending=False)
+        platforms = ['meta' if p == 'Meta' else 'google' for p in ordered['平台']]
+        st.dataframe(styled_money_frame(ordered, {'花費', 'CPA', 'CPC'}, platforms), hide_index=True, width='stretch',
+                     column_config={name: st.column_config.NumberColumn(format='%.2f') for name in ['訂位', 'CTR %']})
         export_key = (view['at'], project_id, tuple(channels), query)
         export = st.session_state.get('report_export')
         if export is None or export[0] != export_key:

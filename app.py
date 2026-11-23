@@ -28,6 +28,7 @@ from mori.runner import check_rules, conversion_label
 from mori.storage import GitHubStore
 from mori.ui_performance import UIStore, fetch_accounts
 from mori.budget_ui import render_budgets, render_budget_heading
+from mori.money_display import styled_money_frame
 from mori.dashboard import CSS as DASHBOARD_CSS, render_report as render_overview
 from mori.vault import resolve_credentials
 from mori.connection_ui import connection_panel
@@ -88,7 +89,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.24.51")
+st.sidebar.caption("系統版本：2026.11.24.52")
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
 # First budget visit loads data. Navigation and filter changes reuse this
 # session snapshot; only the manual button requests another read.
@@ -336,7 +337,7 @@ elif page == "異常規則":
     else:
         st.subheader("已儲存規則")
         if settings["rules"]:
-            st.dataframe(pd.DataFrame([{
+            st.dataframe(styled_money_frame(pd.DataFrame([{
                 "規則名稱": r["name"], "狀態": rule_window(r, settings)[2],
                 "關聯專案": next((p["name"] for p in settings["projects"] if p["id"] == r.get("project_id")), "獨立規則"),
                 "帳號": names.get(r["account_key"], r["account_key"]), "層級": LEVELS[r["level"]],
@@ -344,7 +345,7 @@ elif page == "異常規則":
                 "活動包含": r.get("campaign_filter", ""), "廣告組合包含": r.get("adset_filter", ""),
                 "廣告包含": r.get("ad_filter", ""), "資料起日": r.get("starts_on") or next((p["start"] for p in settings["projects"] if p["id"] == r.get("project_id")), "不限"),
                 "資料迄日": r.get("ends_on") or next((p["end"] for p in settings["projects"] if p["id"] == r.get("project_id")), "不限"), "通知對象": r.get("recipient_key", "default")
-            } for r in settings["rules"]]), hide_index=True)
+            } for r in settings["rules"]]), {"花費門檻 >", "CPA 門檻 >"}), hide_index=True)
         else:
             st.info("尚未儲存任何規則。請填寫下方表單並按「儲存規則」。")
         enabled_count = sum(bool(r.get("enabled")) for r in settings["rules"])
@@ -379,8 +380,8 @@ elif page == "異常規則":
             available_levels = ["campaign"] if google else list(LEVELS)
             level = st.selectbox("判斷層級", available_levels, index=available_levels.index(rule.get("level", "campaign")) if rule.get("level", "campaign") in available_levels else 0, format_func=lambda k: "廣告活動" if google and k == "campaign" else LEVELS[k])
             days = st.number_input("累計幾天（截至昨天）", 1, 30, int(rule.get("period_days", 1)))
-            spend = st.number_input("花費必須超過", min_value=0.0, value=float(rule.get("minimum_spend", 1000)), step=100.0)
-            cpa = st.number_input("CPA 必須超過", min_value=0.0, value=float(rule.get("cpa_threshold", 200)), step=10.0)
+            spend = st.number_input("花費必須超過", min_value=0.0, value=float(rule.get("minimum_spend", 1000)), step=100.0, icon=":material/attach_money:", format="%.2f")
+            cpa = st.number_input("CPA 必須超過", min_value=0.0, value=float(rule.get("cpa_threshold", 200)), step=10.0, icon=":material/attach_money:", format="%.2f")
             zero = st.checkbox("花費過門檻且零轉換時也提醒", rule.get("notify_zero", True))
             recipient_key = st.text_input("LINE 通知對象代號", rule.get("recipient_key", "default"), help="default 使用 LINE_RECIPIENT_ID；其他代號從 Secrets 的 LINE_RECIPIENTS_JSON 對照，不在此填權杖。")
             campaign_filter = st.text_input("活動名稱包含（留空為全部）", rule.get("campaign_filter", ""))
@@ -430,7 +431,7 @@ elif page == "異常規則":
                     item.pop("_rule", None)
                 if candidates:
                     st.subheader("符合異常條件的項目")
-                    st.dataframe(pd.DataFrame(candidates), hide_index=True)
+                    st.dataframe(styled_money_frame(pd.DataFrame(candidates), {"spend", "cpa"}), hide_index=True)
                     st.success(f"找到 {len(candidates)} 個異常項目。這是預覽，尚未發送 LINE。")
                 for error in errors:
                     st.error(f"{error['rule']}：{error['error']}")

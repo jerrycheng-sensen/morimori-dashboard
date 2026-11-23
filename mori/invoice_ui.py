@@ -21,7 +21,7 @@ def funding_badge(settings, plan_id, platform=''):
 
 def proof_caption(settings, plan_id):
     value = invoice_summary(settings, plan_id)
-    amounts = '／'.join(f'{cur} {money_text(amount, plan_platform(settings, plan_id))}' for cur, amount in sorted(value['totals'].items()))
+    amounts = '／'.join(f'{money_text(amount, plan_platform(settings, plan_id))}' for cur, amount in sorted(value['totals'].items()))
     money_note(st, f'已保存 {value["count"]} 筆有效發票' + (f'｜本計畫認列 {amounts}' if amounts else '｜尚未上傳發票證明'))
 
 
@@ -43,7 +43,7 @@ def render_invoices(settings, documents, persist):
                 for p in platform_plans:
                     for cur, amount in invoice_summary(settings, p['id'])['totals'].items():
                         sums[cur] = sums.get(cur, Decimal(0)) + amount
-                money_note(st, '發票認列總額：' + ('；'.join(f'{cur} {money_text(amount, platform)}' for cur, amount in sorted(sums.items())) or '尚未登錄'))
+                money_note(st, '發票認列總額：' + ('；'.join(f'{money_text(amount, platform)}' for cur, amount in sorted(sums.items())) or '尚未登錄'))
     if not plans:
         st.info('請先到「新增／編輯設定」建立專案與平台計畫，再登錄發票。')
         return
@@ -60,9 +60,9 @@ def render_invoices(settings, documents, persist):
         result = results.get(p['id'], {})
         spend = result.get('spend') if not result.get('error') and not result.get('not_started') else None
         all_rows.append({'專案／平台': label(p['id']), '儲值狀態': summary['status'], '有效發票': summary['count'],
-                         '本計畫發票認列': '；'.join(f"{cur} {money_text(v, accounts[p['account_key']]['platform'])}" for cur, v in sorted(summary['totals'].items())) or '—',
+                         '本計畫發票認列': '；'.join(f"{money_text(v, accounts[p['account_key']]['platform'])}" for cur, v in sorted(summary['totals'].items())) or '—',
                          '調整後專案預算（帳號幣別）': money_text(balance(settings, p['id'], today)['adjusted'], accounts[p['account_key']]['platform']),
-                         '已使用預算（平台回報花費）': f"{result.get('currency', '')} {money_text(spend, accounts[p['account_key']]['platform'])}" if spend is not None else '尚未讀取／讀取失敗'})
+                         '已使用預算（平台回報花費）': f"{money_text(spend, accounts[p['account_key']]['platform'])}" if spend is not None else '尚未讀取／讀取失敗'})
     money_table(st, pd.DataFrame(all_rows), [accounts[p['account_key']]['platform'] for p in plans], set())
     st.caption('花費沿用預算總覽本次讀取結果；需要最新數字時，至「預算總覽」按重新讀取。不同專案可能重疊，不加總為全帳號花費。')
     st.subheader('選擇專案／平台，登錄或查看發票')
@@ -84,8 +84,8 @@ def render_invoices(settings, documents, persist):
         registered = b.date_input('儲值登錄日期', today, max_value=today)
         currency = st.text_input('幣別（須與此廣告帳號一致）', 'TWD', max_chars=3, help='例如 TWD；依實際發票及帳號填寫，不同幣別分開呈現，不換匯。')
         a, b = st.columns(2)
-        face = a.number_input('發票票面總金額', min_value=0., step=1000., format='%.0f' if platform == 'meta' else '%.2f')
-        allocated = b.number_input('本專案認列金額（與平台預算同口徑）', min_value=0., step=1000., format='%.0f' if platform == 'meta' else '%.2f')
+        face = a.number_input('發票票面總金額', min_value=0., step=1000., icon=':material/attach_money:', format='%.0f' if platform == 'meta' else '%.2f')
+        allocated = b.number_input('本專案認列金額（與平台預算同口徑）', min_value=0., step=1000., icon=':material/attach_money:', format='%.0f' if platform == 'meta' else '%.2f')
         st.caption('票面金額依發票原額填寫；本專案認列金額填可歸屬此計畫的金額。若一張發票分攤多案，各案認列合計不得超過票面金額。稅額／服務費請在備註說明。')
         note = st.text_area('備註／用途／金額口徑', max_chars=2000)
         uploaded = st.file_uploader('發票證明（必填，每檔最多 5 MB）', type=['pdf', 'png', 'jpg', 'jpeg'], key='invoice_file_' + plan_id)
@@ -108,7 +108,7 @@ def render_invoices(settings, documents, persist):
                 updated['project_invoices'][-1]['file'] = saved
                 persist(updated, notice='發票與儲值紀錄已儲存，預算總覽已連動。', keep_budget_view=True)
             except (AppError, ValueError) as exc:
-                st.error(str(exc))
+                st.error(str(exc).replace('$', r'\$'))
     st.subheader('發票與更正紀錄')
     voids = {v['invoice_id']: v for v in settings.get('invoice_voids', [])}
     records = [r for r in settings.get('project_invoices', []) if r['plan_id'] == plan_id]
@@ -117,7 +117,7 @@ def render_invoices(settings, documents, persist):
     for row in reversed(records):
         voided = row['id'] in voids
         with st.expander(f"{'已作廢' if voided else '有效'}｜{row['invoice_number']}｜{row['issued_on']}"):
-            money_note(st, f"票面金額：{row['currency']} {money_text(row['face_amount'], platform)}；本專案認列：{row['currency']} {money_text(row['allocated_amount'], platform)}")
+            money_note(st, f"票面金額：{money_text(row['face_amount'], platform)}；本專案認列：{money_text(row['allocated_amount'], platform)}")
             st.write('檔案：' + row['file']['name'])
             st.caption(f"儲值登錄日 {row['registered_on']}｜建立 {row['created_at']}｜紀錄 {row['id']}")
             if row['note']:
@@ -128,7 +128,7 @@ def render_invoices(settings, documents, persist):
                     st.download_button('下載發票附件', content, file_name=row['file']['name'], mime=row['file']['mime'],
                                        key='invoice_download_' + row['id'], on_click='ignore')
                 except AppError as exc:
-                    st.error(str(exc))
+                    st.error(str(exc).replace('$', r'\$'))
             if voided:
                 st.caption('作廢原因：' + voids[row['id']]['reason'])
             else:
@@ -141,4 +141,4 @@ def render_invoices(settings, documents, persist):
                                 raise AppError('請勾選確認作廢，才會更新此筆紀錄。')
                             persist(void_invoice(settings, row['id'], reason), notice='已作廢，儲值狀態已重新判定。', keep_budget_view=True)
                         except AppError as exc:
-                            st.error(str(exc))
+                            st.error(str(exc).replace('$', r'\$'))

@@ -19,7 +19,7 @@ def money_text(value, platform='combined'):
     rounded = amount.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
     if rounded == 0:
         rounded = abs(rounded)
-    return f'{rounded:,.{places}f}'
+    return f'${rounded:,.{places}f}'
 
 
 def money_html(value, platform='combined'):
@@ -32,10 +32,12 @@ def money_html(value, platform='combined'):
 
 def soften_decimals(text):
     """For already formatted, escaped monetary prose; never use on arbitrary HTML."""
-    return re.sub(r'(?<=\d)(\.\d{2})(?!\d)', r'<span class="mori-money-fraction">\1</span>', escape(str(text)))
+    text = re.sub(r'\b[A-Z]{3}\s+(?=\$)', '', str(text))
+    return re.sub(r'(?<=\d)(\.\d{2})(?!\d)', r'<span class="mori-money-fraction">\1</span>', escape(text))
 
 
 def money_metric(target, label, value, platform='combined', prefix='', empty='—'):
+    prefix = '' if re.fullmatch(r'(?:[A-Z]{3}\s*|\$)', prefix) else prefix
     formatted = money_text(value, platform) if value is not None else empty
     content = money_html(value, platform) if value is not None else escape(empty)
     target.markdown(f'<article class="mori-money-metric" data-money-label="{escape(label, quote=True)}" '
@@ -49,6 +51,7 @@ def money_note(target, text):
 
 def money_table(target, df, platforms, money_columns):
     """Readable financial table; underlying numeric dataframe remains exportable."""
+    df = df.drop(columns=[c for c in ('currency', '幣別') if c in df and set(df[c].dropna().astype(str)) <= {'TWD'}])
     headers = ''.join('<th scope="col">' + escape(str(c)) + '</th>' for c in df.columns)
     rows = []
     for index, (_, row) in enumerate(df.iterrows()):
@@ -67,3 +70,14 @@ def money_table(target, df, platforms, money_columns):
         rows.append('<tr>' + ''.join(cells) + '</tr>')
     target.markdown('<div class="mori-money-table" tabindex="0"><table><thead><tr>' + headers +
                     '</tr></thead><tbody>' + ''.join(rows) + '</tbody></table></div>', unsafe_allow_html=True)
+
+
+def styled_money_frame(df, columns, platforms=None, raw=False):
+    """Native sortable tables keep numeric values; apply symbols only to display."""
+    styled = df.style
+    for i, index in enumerate(df.index):
+        platform = platforms[i] if platforms else 'combined'
+        for column in columns & set(df.columns):
+            styled = styled.format(lambda value, p=platform: ('$' + str(value) if raw else money_text(value, p)) if value is not None else '—',
+                                   subset=([index], [column]), na_rep='—')
+    return styled

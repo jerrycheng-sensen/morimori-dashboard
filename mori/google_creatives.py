@@ -114,7 +114,7 @@ def reconcile(campaign_rows, detail_rows, live_date=None):
         # differences for today when BOTH complete requests returned this key;
         # missing groups/campaigns and historical discrepancies remain errors.
         if live_date and key[1] == str(live_date) and key in expected and key in actual:
-            warnings.append(f'今日活動與明細回報尚未同步：廣告活動 ID {key[0]}，活動 {expected[key]:,.2f}、明細 {actual[key]:,.2f}；目前按廣告／素材群組明細認列，後續更新可能回補。')
+            warnings.append(f'今日活動與明細回報尚未同步：廣告活動 ID {key[0]}，活動 ${expected[key]:,.2f}、明細 ${actual[key]:,.2f}；目前按廣告／素材群組明細認列，後續更新可能回補。')
         else:
-            raise AppError(f'Google 廣告／素材群組明細與廣告活動花費未對上：活動 ID {key[0]}，日期 {key[1]}，活動 {expected.get(key, 0)}、明細 {actual.get(key, 0)}，差額 {delta}；已停止認列，請重新更新或核對平台報表。')
+            raise AppError(f'Google 廣告／素材群組明細與廣告活動花費未對上：活動 ID {key[0]}，日期 {key[1]}，活動 ${expected.get(key, 0)}、明細 ${actual.get(key, 0)}，差額 ${delta}；已停止認列，請重新更新或核對平台報表。')
     return warnings

@@ -191,7 +191,7 @@ def test_budget_transfer_ui_posts_once_and_updates_both_cards(monkeypatch):
     assert any('來源案' in x.value and '接收案' in x.value and '36,386' in x.value for x in app.markdown)
     assert app.session_state['budget_view']['results']['a']['spend'] == 1200
     app.button(key='budget_nav_overview').click().run()
-    assert '可用預算92,386' in displayed_money(app, '可用預算')
+    assert '可用預算$92,386' in displayed_money(app, '可用預算')
     app.button(key='budget_nav_edit').click().run()
     assert next(x for x in app.number_input if x.label.startswith('平台投放預算')).disabled is False  # new-plan editor
     # Reversal appends a second record and returns both balances.
@@ -228,7 +228,7 @@ def test_budget_initial_load_only_until_manual_read_even_after_navigation_or_ela
     app.sidebar.radio[0].set_value('專案預算').run()
     assert not app.exception and len(calls) == 1
     assert app.session_state['budget_view']['results']['p']['spend'] == 1200
-    assert '累計花費1,200' in displayed_money(app, '累計花費')
+    assert '累計花費$1,200' in displayed_money(app, '累計花費')
     # Fragment-only filters must not read the API on every click.
     app.selectbox(key='budget_state_filter').set_value('進行中').run()
     assert not app.exception and len(calls) == 1
@@ -396,7 +396,7 @@ def test_header_totals_stay_visible_across_tabs_and_reuse_account_reads(monkeypa
     assert app.session_state['budget_account_view'] == initial and len(calls) == 1
     app.button(key='account_totals_reload').click().run()
     assert not app.exception and len(calls) == 2
-    assert '累計預算TWD 100' in displayed_money(app, '累計預算')
+    assert '累計預算$100' in displayed_money(app, '累計預算')
     app.button(key='pending_invoice_m').click().run()
     assert not app.exception and app.session_state['budget_section'] == 'invoices'
     assert app.selectbox(key='invoice_plan').value == 'm' and len(calls) == 2

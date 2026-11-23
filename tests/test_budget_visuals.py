@@ -93,7 +93,7 @@ render_removed_ad_notice(items)
     assert app.expander[0].label == '查看已刪除／封存廣告明細（1 則）'
     html = '\n'.join(x.value for x in app.markdown)
     assert '含已刪除／封存廣告 1 則' in html
-    assert '6994622466785' in html and '<td>33</td>' in html
+    assert '6994622466785' in html and '<td>$33</td>' in html
     assert '&lt;script&gt;' in html and '<script>' not in html
     assert any('不需再加一次' in x.value for x in app.caption)
 
