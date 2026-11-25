@@ -8,9 +8,9 @@ import pandas as pd
 import streamlit as st
 
 from mori.core import AppError, TAIPEI
-from mori.money_display import money_text, money_html, money_note, money_table, plan_platform, soften_decimals
+from mori.money_display import money_text, money_html, money_note, money_metric, money_table, plan_platform, soften_decimals
 from mori.budget_ledger import balance
-from mori.invoices import (active_records, checked_file, invoice_summary, register_invoice, void_invoice)
+from mori.invoices import (active_records, checked_file, invoice_summary, register_invoice, void_invoice, invoice_quote)
 
 
 def funding_badge(settings, plan_id, platform=''):
@@ -76,6 +76,45 @@ def render_invoices(settings, documents, persist):
     st.caption('發票附件會加密保存於私人資料儲存庫；可存取本網站的人仍可使用此頁，請以網站分享權限限制授權人員。')
     if documents is None:
         st.error('附件儲存尚未就緒：需設定有效 CREDENTIALS_KEY 與私人資料儲存庫，才能上傳或下載。')
+    scope = 'invoice_amount_' + plan_id
+    original_budget = balance(settings, plan_id, today)['original']
+    with st.container(border=True):
+        st.subheader('先算清楚：廣告費、服務費與稅')
+        money_note(st, '原始平台預算：' + money_text(original_budget, platform) + '（未稅、不含服務費）。借入／轉入預算不會自動當成新儲值。')
+        base = st.number_input('本次廣告可用金額（未稅、不含服務費）', min_value=0., value=float(original_budget),
+                               step=1000., format='%.0f' if platform == 'meta' else '%.2f',
+                               icon=':material/attach_money:', key=scope + '_base')
+        st.caption('可修改為本次實際儲值或分攤的廣告費；這個金額才會認列到專案，服務費與稅不算可投放預算。')
+        basis = 'ad'
+        if platform == 'meta':
+            basis = st.radio('Meta 稅額計算基礎（請依發票確認）', ['ad_plus_service', 'ad'], index=0,
+                             format_func=lambda value: '廣告費＋服務費，一起計算 5% 稅' if value == 'ad_plus_service' else '只有廣告費計算 5% 稅',
+                             key=scope + '_basis')
+        rounding = st.selectbox('服務費與稅額的進位方式', ['whole', 'cents'],
+                                format_func=lambda value: '各項四捨五入至整元' if value == 'whole' else '各項四捨五入至小數 2 位', key=scope + '_rounding')
+        quote = None
+        if base > 0 and basis:
+            quote = invoice_quote(platform, base, basis, rounding)
+            a, b, c, d = st.columns(4)
+            display_platform = 'meta' if platform == 'meta' and rounding == 'whole' else 'google'
+            money_metric(a, '廣告可用金額', base, platform)
+            money_metric(b, '服務費（3%）' if platform == 'meta' else '服務費（0%）', quote['service_amount'], display_platform)
+            money_metric(c, '稅額（5%）', quote['tax_amount'], display_platform)
+            money_metric(d, '預估發票總額', quote['total'], display_platform)
+            st.caption('稅額＝' + ('（廣告費＋已進位的服務費）' if quote['tax_basis'] == 'ad_plus_service' else '廣告費') + '× 5%；總額＝廣告費＋服務費＋稅。依你提供的費率試算，實際仍以發票為準。')
+        elif platform == 'meta' and not basis:
+            st.info('請先選擇 Meta 稅額計算基礎，再帶入發票欄位。')
+        if st.button('套用到下方發票欄位', key=scope + '_apply', disabled=quote is None, type='primary'):
+            st.session_state[scope + '_face'] = float(quote['total'])
+            st.session_state[scope + '_allocated'] = float(quote['ad_amount'])
+            st.session_state[scope + '_applied'] = quote
+            st.success('已帶入：發票總額含服務費與稅；專案認列只有廣告費。尚未儲存發票。')
+    if st.session_state.get(scope + '_applied'):
+        st.caption('下方欄位沿用上次套用的試算；修改上方金額後，請再次按套用。')
+        if st.button('取消套用，改為手動登錄', key=scope + '_manual'):
+            st.session_state.pop(scope + '_applied', None)
+    st.session_state.setdefault(scope + '_face', 0.)
+    st.session_state.setdefault(scope + '_allocated', 0.)
     with st.form('invoice_add_' + plan_id, clear_on_submit=False):
         st.markdown('### 新增一筆發票紀錄')
         number = st.text_input('發票號碼／憑證編號', max_chars=100)
@@ -84,9 +123,9 @@ def render_invoices(settings, documents, persist):
         registered = b.date_input('儲值登錄日期', today, max_value=today)
         currency = st.text_input('幣別（須與此廣告帳號一致）', 'TWD', max_chars=3, help='例如 TWD；依實際發票及帳號填寫，不同幣別分開呈現，不換匯。')
         a, b = st.columns(2)
-        face = a.number_input('發票票面總金額', min_value=0., step=1000., icon=':material/attach_money:', format='%.0f' if platform == 'meta' else '%.2f')
-        allocated = b.number_input('本專案認列金額（與平台預算同口徑）', min_value=0., step=1000., icon=':material/attach_money:', format='%.0f' if platform == 'meta' else '%.2f')
-        st.caption('票面金額依發票原額填寫；本專案認列金額填可歸屬此計畫的金額。若一張發票分攤多案，各案認列合計不得超過票面金額。稅額／服務費請在備註說明。')
+        face = a.number_input('發票票面總金額', min_value=0., step=1000., icon=':material/attach_money:', format='%.0f' if platform == 'meta' and st.session_state.get(scope + '_applied', {}).get('rounding') != 'cents' else '%.2f', key=scope + '_face')
+        allocated = b.number_input('本專案認列金額（與平台預算同口徑）', min_value=0., step=1000., icon=':material/attach_money:', format='%.0f' if platform == 'meta' else '%.2f', key=scope + '_allocated')
+        st.caption('票面金額依發票原額填寫；本專案認列金額填可歸屬此計畫的金額。若一張發票分攤多案，各案認列合計不得超過票面金額。發票票面金額含服務費與稅；專案認列不含。若實際票面與試算不同，請在備註說明差異原因。')
         note = st.text_area('備註／用途／金額口徑', max_chars=2000)
         uploaded = st.file_uploader('發票證明（必填，每檔最多 5 MB）', type=['pdf', 'png', 'jpg', 'jpeg'], key='invoice_file_' + plan_id)
         st.caption('每筆一份附件，可重複新增多筆發票。選取檔案後仍需按下儲存；不會自動辨識發票文字或核實付款。')
@@ -102,7 +141,7 @@ def render_invoices(settings, documents, persist):
                 operation = uuid.uuid4().hex
                 # Validate amounts/duplicates/bindings before any document write.
                 draft_file = {**metadata, 'document_id': operation, 'parts': 1}
-                updated = register_invoice(settings, plan_id, number, issued, registered, currency, face, allocated, note, draft_file, operation)
+                updated = register_invoice(settings, plan_id, number, issued, registered, currency, face, allocated, note, draft_file, operation, charge_quote=st.session_state.get(scope + '_applied'))
                 with st.spinner('加密保存發票附件…'):
                     saved = documents.save(uploaded.name, content)
                 updated['project_invoices'][-1]['file'] = saved
@@ -117,7 +156,11 @@ def render_invoices(settings, documents, persist):
     for row in reversed(records):
         voided = row['id'] in voids
         with st.expander(f"{'已作廢' if voided else '有效'}｜{row['invoice_number']}｜{row['issued_on']}"):
-            money_note(st, f"票面金額：{money_text(row['face_amount'], platform)}；本專案認列：{money_text(row['allocated_amount'], platform)}")
+            invoice_platform = 'google' if row.get('charge_quote', {}).get('rounding') == 'cents' else platform
+            money_note(st, f"票面金額：{money_text(row['face_amount'], invoice_platform)}；本專案認列：{money_text(row['allocated_amount'], platform)}")
+            if row.get('charge_quote'):
+                charges = row['charge_quote']
+                money_note(st, '服務費：' + money_text(charges['service_amount'], invoice_platform) + '；稅額：' + money_text(charges['tax_amount'], invoice_platform) + '；試算總額：' + money_text(charges['total'], invoice_platform) + '；實際票面與試算差額：' + money_text(row['invoice_difference'], invoice_platform))
             st.write('檔案：' + row['file']['name'])
             st.caption(f"儲值登錄日 {row['registered_on']}｜建立 {row['created_at']}｜紀錄 {row['id']}")
             if row['note']:

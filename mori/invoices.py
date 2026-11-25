@@ -6,7 +6,7 @@ import hashlib
 import re
 import uuid
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -15,6 +15,40 @@ from mori.budget_ledger import money
 
 MAX_FILE = 5 * 1024 * 1024
 CHUNK = 500_000
+
+
+def invoice_quote(platform, ad_amount, tax_basis=None, rounding='whole'):
+    """User-specified rates; estimate components without mutating project money."""
+    if platform not in ('meta', 'google') or rounding not in ('whole', 'cents'):
+        raise AppError('發票試算的平台或進位方式不正確。')
+    if platform == 'google':
+        tax_basis = 'ad'
+    if tax_basis not in ('ad', 'ad_plus_service'):
+        raise AppError('請先確認 Meta 稅額以廣告費或廣告費加服務費計算。')
+    base = money(ad_amount)
+    if base <= 0:
+        raise AppError('本次廣告可用金額須大於零。')
+    unit = Decimal('1') if rounding == 'whole' else Decimal('.01')
+    rate = Decimal('.03') if platform == 'meta' else Decimal(0)
+    service = (base * rate).quantize(unit, rounding=ROUND_HALF_UP)
+    tax_base = base + service if tax_basis == 'ad_plus_service' else base
+    tax = (tax_base * Decimal('.05')).quantize(unit, rounding=ROUND_HALF_UP)
+    return {'version': 1, 'ad_amount': str(base), 'service_rate': str(rate),
+            'service_amount': str(service), 'tax_rate': '0.05', 'tax_basis': tax_basis,
+            'tax_amount': str(tax), 'total': str(base + service + tax), 'rounding': rounding}
+
+
+def validate_quote(row):
+    quote = row.get('charge_quote')
+    if quote is None:
+        return  # Preserve legacy invoices without guessing historical fees.
+    if not isinstance(quote, dict):
+        raise AppError('發票費稅試算資料格式不正確。')
+    expected = invoice_quote(row['platform'], row['allocated_amount'], quote.get('tax_basis'), quote.get('rounding'))
+    if quote != expected or money(row.get('invoice_difference')) != money(row['face_amount']) - money(expected['total']):
+        raise AppError('發票費稅試算與本專案認列金額不一致，請重新計算。')
+    if money(row['invoice_difference']) != 0 and not str(row.get('note', '')).strip():
+        raise AppError('實際發票金額與試算總額不同，請在備註說明差異原因。')
 
 
 def checked_file(name, content):
@@ -123,6 +157,7 @@ def validate_invoices(settings):
             raise AppError('發票金額及本專案認列金額須大於零；認列不可超過發票金額。')
         if not str(row.get('invoice_number', '')).strip():
             raise AppError('請填發票號碼／憑證編號。')
+        validate_quote(row)
         date.fromisoformat(row['issued_on'])
         date.fromisoformat(row['registered_on'])
         datetime.fromisoformat(row['created_at'])
@@ -150,7 +185,7 @@ def validate_invoices(settings):
 
 
 def register_invoice(settings, plan_id, number, issued_on, registered_on, currency, face_amount,
-                     allocated_amount, note, file, record_id=None, now=None):
+                     allocated_amount, note, file, record_id=None, now=None, charge_quote=None):
     now = now or datetime.now(TAIPEI)
     today = now.astimezone(TAIPEI).date()
     if max(date.fromisoformat(str(issued_on)), date.fromisoformat(str(registered_on))) > today:
@@ -167,6 +202,14 @@ def register_invoice(settings, plan_id, number, issued_on, registered_on, curren
         'currency': str(currency).strip().upper(), 'face_amount': str(money(face_amount)),
         'allocated_amount': str(money(allocated_amount)), 'note': str(note).strip(),
         'file': copy.deepcopy(file), 'created_at': now.isoformat()})
+    if charge_quote is not None:
+        if not isinstance(charge_quote, dict):
+            raise AppError('發票費稅試算資料格式不正確。')
+        expected = invoice_quote(account['platform'], allocated_amount, charge_quote.get('tax_basis'), charge_quote.get('rounding'))
+        if charge_quote != expected:
+            raise AppError('發票費稅試算與本專案認列金額不一致，請重新計算。')
+        updated['project_invoices'][-1].update(charge_quote=copy.deepcopy(charge_quote),
+            invoice_difference=str(money(face_amount) - money(charge_quote['total'])))
     validate_invoices(updated)
     return updated
 

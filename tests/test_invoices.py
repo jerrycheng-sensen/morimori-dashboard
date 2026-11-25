@@ -129,3 +129,99 @@ def test_upload_failure_does_not_return_completed_attachment():
 def test_reject_bad_file_type_empty_or_oversized(name, payload):
     with pytest.raises(AppError):
         checked_file(name,payload)
+
+
+def test_invoice_quote_user_rates_tax_bases_and_rounding_are_explicit():
+    from mori.invoices import invoice_quote
+    from decimal import Decimal
+    quote = invoice_quote('meta', '10000', 'ad_plus_service')
+    assert (quote['service_amount'], quote['tax_amount'], quote['total']) == ('300', '515', '10815')
+    assert invoice_quote('meta', '10000', 'ad')['total'] == '10800'
+    assert invoice_quote('google', '10000')['total'] == '10500'
+    assert invoice_quote('google', '1234.56', rounding='cents')['total'] == '1296.29'
+    assert invoice_quote('google', '1234.56', rounding='whole')['total'] == '1296.56'
+    for args in [('meta', 100, None), ('meta', 0, 'ad'), ('invalid', 100, 'ad')]:
+        with pytest.raises(AppError):
+            invoice_quote(*args)
+    assert Decimal(quote['ad_amount']) + Decimal(quote['service_amount']) + Decimal(quote['tax_amount']) == Decimal(quote['total'])
+
+
+def test_invoice_quote_is_audited_but_only_net_ad_amount_is_recognised():
+    from mori.invoices import invoice_quote
+    from decimal import Decimal
+    settings = sample()
+    original = copy.deepcopy(settings)
+    quote = invoice_quote('meta', 100, 'ad_plus_service', 'cents')
+    updated = register_invoice(settings, 'meta', 'FEE123', '2026-11-01', '2026-11-02', 'TWD',
+                               '108.15', '100', '', reference(), now=NOW, charge_quote=quote)
+    assert invoice_summary(updated, 'meta')['totals']['TWD'] == Decimal('100')
+    assert updated['project_invoices'][0]['charge_quote'] == quote
+    assert updated['project_invoices'][0]['invoice_difference'] == '0.00'
+    assert settings == original and updated['projects'] == original['projects']
+    altered = copy.deepcopy(updated)
+    altered['project_invoices'][0]['charge_quote']['tax_amount'] = '5.14'
+    with pytest.raises(AppError):
+        validate_settings(altered)
+    with pytest.raises(AppError, match='備註'):
+        register_invoice(settings, 'meta', 'FEE124', '2026-11-01', '2026-11-02', 'TWD',
+                         108, 100, '', reference(), now=NOW, charge_quote=quote)
+    accepted = register_invoice(settings, 'meta', 'FEE124', '2026-11-01', '2026-11-02', 'TWD',
+                         108, 100, '發票依整元開立', reference(), now=NOW, charge_quote=quote)
+    assert accepted['project_invoices'][0]['invoice_difference'] == '-0.15'
+    with pytest.raises(AppError):
+        register_invoice(settings, 'meta', 'FEE125', '2026-11-01', '2026-11-02', 'TWD',
+                         108, 99, '資料不一致', reference(), now=NOW, charge_quote=quote)
+
+
+def test_invoice_calculator_apply_saves_net_and_provenance_without_budget_mutation(monkeypatch):
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    class Upload:
+        name = 'invoice.pdf'
+        def getvalue(self):
+            return PDF
+    monkeypatch.setattr(st, 'file_uploader', lambda *args, **kwargs: Upload())
+    app = AppTest.from_string('''
+import streamlit as st
+from mori.invoice_ui import render_invoices
+from mori.invoices import checked_file
+class Documents:
+    def save(self, name, content):
+        st.session_state.saves += 1
+        return {**checked_file(name, content), 'document_id': 'c'*32, 'parts': 1}
+def persist(value, **kwargs):
+    st.session_state.settings = value
+render_invoices(st.session_state.settings, Documents(), persist)
+''', default_timeout=15)
+    original = sample()
+    app.session_state['settings'] = copy.deepcopy(original)
+    app.session_state['saves'] = 0
+    app.run()
+    assert not app.exception
+    assert app.radio(key='invoice_amount_meta_basis').value == 'ad_plus_service'
+    app.number_input(key='invoice_amount_meta_base').set_value(10000.).run()
+    app.button(key='invoice_amount_meta_apply').click().run()
+    assert not app.exception
+    assert app.number_input(key='invoice_amount_meta_face').value == 10815.
+    assert app.number_input(key='invoice_amount_meta_allocated').value == 10000.
+    assert app.session_state['saves'] == 0
+    next(x for x in app.text_input if x.label == '發票號碼／憑證編號').set_value('FEE123')
+    app.number_input(key='invoice_amount_meta_face').set_value(10814.)
+    next(x for x in app.button if x.label == '儲存發票與儲值紀錄').click().run()
+    assert any('備註' in x.value for x in app.error) and app.session_state['saves'] == 0
+    next(x for x in app.text_area if x.label == '備註／用途／金額口徑').set_value('實際發票少開 1 元，依票面登錄')
+    next(x for x in app.button if x.label == '儲存發票與儲值紀錄').click().run()
+    assert not app.exception and not app.error
+    saved = app.session_state['settings']
+    assert app.session_state['saves'] == 1
+    assert saved['projects'] == original['projects']
+    record = saved['project_invoices'][0]
+    assert record['allocated_amount'] == '10000.0'
+    assert record['face_amount'] == '10814.0'
+    assert record['invoice_difference'] == '-1.0'
+    assert record['charge_quote']['tax_amount'] == '515'
+    app.selectbox(key='invoice_plan').set_value('google').run()
+    app.button(key='invoice_amount_google_apply').click().run()
+    assert app.number_input(key='invoice_amount_google_face').value == 105.
+    assert app.number_input(key='invoice_amount_google_allocated').value == 100.
+    assert app.session_state['saves'] == 1
