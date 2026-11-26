@@ -341,6 +341,7 @@ def test_invoice_upload_save_roundtrip_and_overview_link(monkeypatch):
     app.run()
     app.sidebar.radio[0].set_value('專案預算').run()
     app.button(key='budget_nav_invoices').click().run()
+    app.text_input(key='invoice_amount_m_order').set_value('F-test-roundtrip')
     next(x for x in app.text_input if x.label == '發票號碼／憑證編號').set_value('AB12345678')
     next(x for x in app.number_input if x.label == '發票票面總金額').set_value(100.)
     next(x for x in app.number_input if x.label.startswith('本專案認列金額')).set_value(60.)

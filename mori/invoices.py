@@ -157,6 +157,8 @@ def validate_invoices(settings):
             raise AppError('發票金額及本專案認列金額須大於零；認列不可超過發票金額。')
         if not str(row.get('invoice_number', '')).strip():
             raise AppError('請填發票號碼／憑證編號。')
+        if 'supplier_order_number' in row:
+            validate_order_reference(row.get('supplier'), row['supplier_order_number'])
         validate_quote(row)
         date.fromisoformat(row['issued_on'])
         date.fromisoformat(row['registered_on'])
@@ -168,6 +170,11 @@ def validate_invoices(settings):
             raise AppError('作廢須對應一筆尚未作廢的發票，並填寫原因。')
         datetime.fromisoformat(entry['created_at'])
         voids.add(entry['invoice_id'])
+    for entry in settings.get('invoice_order_links', []):
+        if entry.get('invoice_id') not in seen:
+            raise AppError('訂單編號須對應已儲存的發票。')
+        validate_order_reference(entry.get('supplier'), entry.get('order_number'))
+        datetime.fromisoformat(entry['created_at'])
     active = active_records(settings)
     # A shared invoice can be allocated across projects but never over its face value.
     for row in active:
@@ -185,7 +192,7 @@ def validate_invoices(settings):
 
 
 def register_invoice(settings, plan_id, number, issued_on, registered_on, currency, face_amount,
-                     allocated_amount, note, file, record_id=None, now=None, charge_quote=None):
+                     allocated_amount, note, file, record_id=None, now=None, charge_quote=None, supplier_order_number=None):
     now = now or datetime.now(TAIPEI)
     today = now.astimezone(TAIPEI).date()
     if max(date.fromisoformat(str(issued_on)), date.fromisoformat(str(registered_on))) > today:
@@ -202,6 +209,9 @@ def register_invoice(settings, plan_id, number, issued_on, registered_on, curren
         'currency': str(currency).strip().upper(), 'face_amount': str(money(face_amount)),
         'allocated_amount': str(money(allocated_amount)), 'note': str(note).strip(),
         'file': copy.deepcopy(file), 'created_at': now.isoformat()})
+    if supplier_order_number is not None:
+        validate_order_reference('精立數位', supplier_order_number)
+        updated['project_invoices'][-1].update(supplier='精立數位', supplier_order_number=supplier_order_number.strip())
     if charge_quote is not None:
         if not isinstance(charge_quote, dict):
             raise AppError('發票費稅試算資料格式不正確。')
@@ -210,6 +220,38 @@ def register_invoice(settings, plan_id, number, issued_on, registered_on, curren
             raise AppError('發票費稅試算與本專案認列金額不一致，請重新計算。')
         updated['project_invoices'][-1].update(charge_quote=copy.deepcopy(charge_quote),
             invoice_difference=str(money(face_amount) - money(charge_quote['total'])))
+    validate_invoices(updated)
+    return updated
+
+
+def validate_order_reference(supplier, order_number):
+    if supplier != '精立數位' or not isinstance(order_number, str) or not order_number.strip():
+        raise AppError('請填寫精立數位訂單編號。')
+    if len(order_number) > 100 or any(ord(c) < 32 for c in order_number):
+        raise AppError('訂單編號限 100 字，不可包含換行或控制字元。')
+
+
+def invoice_order_reference(settings, row):
+    """Latest reference; original invoice amounts and evidence remain immutable."""
+    reference = {'supplier': row.get('supplier', '精立數位'),
+                 'order_number': row.get('supplier_order_number', '')}
+    for entry in settings.get('invoice_order_links', []):
+        if entry['invoice_id'] == row['id']:
+            reference = {'supplier': entry['supplier'], 'order_number': entry['order_number']}
+    return reference
+
+
+def link_invoice_order(settings, invoice_id, order_number, now=None):
+    validate_order_reference('精立數位', order_number)
+    row = next((r for r in active_records(settings) if r['id'] == invoice_id), None)
+    if row is None:
+        raise AppError('只能補填或更正有效發票的訂單編號。')
+    if invoice_order_reference(settings, row)['order_number'] == order_number.strip():
+        raise AppError('訂單編號沒有變更。')
+    updated = copy.deepcopy(settings)
+    updated.setdefault('invoice_order_links', []).append({
+        'invoice_id': invoice_id, 'supplier': '精立數位', 'order_number': order_number.strip(),
+        'created_at': (now or datetime.now(TAIPEI)).isoformat()})
     validate_invoices(updated)
     return updated
 
@@ -223,7 +265,7 @@ def void_invoice(settings, invoice_id, reason, now=None):
 
 
 def protect_invoice_history(before, after):
-    for key in ('project_invoices', 'invoice_voids'):
+    for key in ('project_invoices', 'invoice_voids', 'invoice_order_links'):
         previous = before.get(key, [])
         if after.get(key, [])[:len(previous)] != previous:
             raise AppError('已儲存的發票紀錄不可覆寫或刪除；更正請先作廢，再重新登錄。')

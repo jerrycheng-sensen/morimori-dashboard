@@ -205,6 +205,7 @@ render_invoices(st.session_state.settings, Documents(), persist)
     assert app.number_input(key='invoice_amount_meta_face').value == 10815.
     assert app.number_input(key='invoice_amount_meta_allocated').value == 10000.
     assert app.session_state['saves'] == 0
+    app.text_input(key='invoice_amount_meta_order').set_value('F-test-123')
     next(x for x in app.text_input if x.label == '發票號碼／憑證編號').set_value('FEE123')
     app.number_input(key='invoice_amount_meta_face').set_value(10814.)
     next(x for x in app.button if x.label == '儲存發票與儲值紀錄').click().run()
@@ -225,3 +226,66 @@ render_invoices(st.session_state.settings, Documents(), persist)
     assert app.number_input(key='invoice_amount_google_face').value == 105.
     assert app.number_input(key='invoice_amount_google_allocated').value == 100.
     assert app.session_state['saves'] == 1
+
+
+def test_supplier_order_registration_and_legacy_backfill_preserve_financial_history():
+    from mori.invoices import invoice_order_reference, link_invoice_order
+    original = add(sample())
+    row = original['project_invoices'][0]
+    assert invoice_order_reference(original, row)['order_number'] == ''
+    linked = link_invoice_order(original, row['id'], ' G-test-001 ', now=NOW)
+    assert linked['project_invoices'] == original['project_invoices']
+    assert linked['projects'] == original['projects']
+    assert invoice_summary(linked, 'meta') == invoice_summary(original, 'meta')
+    assert invoice_order_reference(linked, row) == {'supplier': '精立數位', 'order_number': 'G-test-001'}
+    corrected = link_invoice_order(linked, row['id'], 'F-test-002', now=NOW)
+    protect_invoice_history(linked, corrected)
+    assert len(corrected['invoice_order_links']) == 2
+    assert invoice_order_reference(corrected, row)['order_number'] == 'F-test-002'
+    altered = copy.deepcopy(corrected)
+    altered['invoice_order_links'][0]['order_number'] = 'tampered'
+    with pytest.raises(AppError):
+        protect_invoice_history(corrected, altered)
+    with pytest.raises(AppError):
+        link_invoice_order(corrected, row['id'], 'F-test-002', now=NOW)
+    with pytest.raises(AppError):
+        link_invoice_order(corrected, 'f'*32, 'F-test-003', now=NOW)
+    voided = void_invoice(corrected, row['id'], '測試', now=NOW)
+    with pytest.raises(AppError):
+        link_invoice_order(voided, row['id'], 'F-test-003', now=NOW)
+    for invalid in ['', ' ', 'a'*101, 'F123\n456']:
+        with pytest.raises(AppError):
+            register_invoice(sample(), 'meta', 'AB123', '2026-11-01', '2026-11-02', 'TWD', 100, 60, '',
+                             reference(), supplier_order_number=invalid, now=NOW)
+    fresh = register_invoice(sample(), 'meta', 'AB123', '2026-11-01', '2026-11-02', 'TWD', 100, 60, '',
+                             reference(), supplier_order_number=' F-test-004 ', now=NOW)
+    assert fresh['project_invoices'][0]['supplier_order_number'] == 'F-test-004'
+    assert fresh['project_invoices'][0]['supplier'] == '精立數位'
+    validate_settings(fresh)
+
+
+def test_invoice_primary_flow_precedes_collapsed_overview_and_legacy_order_is_editable():
+    from streamlit.testing.v1 import AppTest
+    source = """
+import streamlit as st
+from mori.invoice_ui import render_invoices
+def persist(value, **kwargs):
+    st.session_state.settings = value
+render_invoices(st.session_state.settings, None, persist)
+"""
+    app = AppTest.from_string(source, default_timeout=15)
+    original = add(sample())
+    app.session_state['settings'] = original
+    app.run()
+    assert not app.exception
+    assert app.selectbox(key='invoice_plan').value == 'meta'
+    assert app.text_input(key='invoice_amount_meta_order').value == ''
+    overview = next(e for e in app.expander if e.label == '查看全部專案的儲值與發票總表')
+    assert not overview.proto.expanded
+    advanced = next(e for e in app.expander if e.label == '調整計稅與進位方式')
+    assert not advanced.proto.expanded
+    next(x for x in app.text_input if x.label == '補填／更正精立數位訂單編號').set_value('F-test-legacy')
+    next(b for b in app.button if b.label == '儲存訂單編號').click().run()
+    assert not app.exception
+    assert app.session_state['settings']['project_invoices'] == original['project_invoices']
+    assert app.session_state['settings']['invoice_order_links'][0]['order_number'] == 'F-test-legacy'
