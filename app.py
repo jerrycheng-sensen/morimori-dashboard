@@ -29,7 +29,7 @@ from mori.storage import GitHubStore
 from mori.ui_performance import UIStore, fetch_accounts
 from mori.budget_ui import render_budgets, render_budget_heading
 from mori.money_display import styled_money_frame
-from mori.dashboard import CSS as DASHBOARD_CSS, render_report as render_overview
+from mori.dashboard import CSS as DASHBOARD_CSS, render_report as render_overview, overview_controls, previous_period
 from mori.vault import resolve_credentials
 from mori.connection_ui import connection_panel
 from mori.field_guidance import (META_ACCOUNT_GUIDANCE, GOOGLE_ACCOUNT_GUIDANCE,
@@ -89,8 +89,16 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.26.54")
-page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"])
+st.sidebar.caption("系統版本：2026.11.26.55")
+pending_overview_budget = st.session_state.pop('overview_budget_target', None)
+if pending_overview_budget:
+    st.session_state.navigation_page = '專案預算'
+    st.session_state.budget_section = 'overview'
+    st.session_state.budget_selected_project = pending_overview_budget
+    st.session_state.budget_nav_year = None
+    st.session_state.budget_nav_search = ''
+    st.session_state.budget_state_filter = '全部'
+page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"], key="navigation_page")
 # First budget visit loads data. Navigation and filter changes reuse this
 # session snapshot; only the manual button requests another read.
 if st.session_state.get('last_navigation_page') != page:
@@ -104,9 +112,9 @@ with st.sidebar.expander("品牌外觀"):
         st.image(logo, width=180)
 if page == '專案預算':
     render_budget_heading()
-else:
+elif page != '數據總覽':
     st.title(page)
-    st.caption("掌握廣告花費、訂位成效與專案進度" if page == "數據總覽" else "廣告數據、預算與 LINE 異常提醒集中管理")
+    st.caption('廣告數據、預算與 LINE 異常提醒集中管理')
 if st.session_state.get("save_notice"):
     st.success(st.session_state.pop("save_notice"))
 
@@ -179,26 +187,32 @@ if page == "數據總覽":
     if not settings["accounts"]:
         st.info("先到「帳號與串接」新增 Meta 或 Google Ads 帳號。")
     else:
-        enabled_rules = sum(1 for r in settings['rules'] if r.get('enabled'))
-        st.markdown(f'<div class="mori-banner"><div><div class="mori-kicker">成效監測工作台</div><strong>每一筆投入，都看得更清楚。</strong><small>整合廣告數據與異常規則，掌握專案的下一步。</small></div><span class="mori-pill">已啟用 {enabled_rules} 筆規則</span></div>', unsafe_allow_html=True)
-        with st.container(border=True):
-            account_col, date_col = st.columns([1.2, 1])
-            keys = account_col.multiselect("廣告帳號", list(names), default=list(names), format_func=names.get)
-            today = datetime.now(TAIPEI).date()
-            period = date_col.date_input("查詢區間（依各廣告帳號時區）", (today - timedelta(days=7), today - timedelta(days=1)), max_value=today)
-        if st.button("讀取數據", type="primary"):
+        keys, period, compare, read = overview_controls(names)
+        if read:
             if len(period) != 2 or not keys:
-                st.error("請選擇完整日期與至少一個帳號。")
+                st.error('請選擇完整日期與至少一個帳號。')
             else:
-                reports, errors = [], []
-                with st.spinner("讀取廣告數據…"):
+                def load_period(start, end):
                     if demo:
-                        reports = [r for r in demo_reports(*period) if r["rows"][0]["account_key"] in keys]
-                    else:
-                        reports, errors = fetch_accounts(
-                            [account_by_key[key] for key in keys],
-                            lambda account: fetch_report(account, *period))
-                st.session_state.report_view = {"reports": reports, "errors": errors, "keys": keys, "period": tuple(map(str, period)), "at": datetime.now(TAIPEI).isoformat()}
+                        reports = []
+                        for account in [account_by_key[k] for k in keys]:
+                            result = next(r for r in demo_reports(start, end) if r['rows'][0]['platform'] == account['platform'])
+                            result['account_key'] = account['key']
+                            for row in result['rows']:
+                                row['account_key'] = account['key']
+                            reports.append(result)
+                        return reports, []
+                    return fetch_accounts([account_by_key[k] for k in keys],
+                                          lambda account: {**fetch_report(account, start, end), 'account_key': account['key']})
+                with st.spinner('讀取廣告數據與比較期間…' if compare else '讀取廣告數據…'):
+                    reports, errors = load_period(*period)
+                    earlier = previous_period(period)
+                    previous_reports, previous_errors = load_period(*earlier) if compare else ([], [])
+                st.session_state.report_view = {'reports': reports, 'errors': errors, 'keys': keys,
+                    'loaded_keys': [r['account_key'] for r in reports], 'period': tuple(map(str, period)),
+                    'at': datetime.now(TAIPEI).isoformat(), 'comparison': compare,
+                    'previous_reports': previous_reports, 'previous_errors': previous_errors,
+                    'previous_period': tuple(map(str, earlier))}
         @st.fragment
         def overview_fragment(view):
             render_overview(view, keys, period, settings, names, account_by_key)

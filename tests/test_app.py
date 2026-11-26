@@ -401,3 +401,49 @@ def test_header_totals_stay_visible_across_tabs_and_reuse_account_reads(monkeypa
     app.button(key='pending_invoice_m').click().run()
     assert not app.exception and app.session_state['budget_section'] == 'invoices'
     assert app.selectbox(key='invoice_plan').value == 'm' and len(calls) == 2
+
+
+def test_overview_redesign_comparison_and_local_filters_reuse_loaded_snapshot(monkeypatch):
+    monkeypatch.setenv('DEMO_MODE','true')
+    app = AppTest.from_file(APP, default_timeout=15).run()
+    assert not app.exception
+    assert app.selectbox(key='overview_period_preset').value == '近 7 天'
+    app.button(key='overview_read').click().run()
+    assert not app.exception
+    view = app.session_state['report_view']
+    assert view['comparison'] and len(view['previous_reports']) == 2
+    assert view['loaded_keys'] == ['demo_meta','demo_google']
+    assert any('平台回報訂位' in m.value and 'overview-kpi' in m.value for m in app.markdown)
+    app.radio(key='overview_platform').set_value('meta').run()
+    assert not app.exception
+    assert app.session_state['report_view'] == view
+    app.radio(key='overview_trend').set_value('cpa').run()
+    assert not app.exception and app.session_state['report_view'] == view
+    app.selectbox(key='overview_period_preset').set_value('昨天').run()
+    assert not app.exception and app.session_state['report_view'] == view
+    assert any('查詢條件已變更' in x.value for x in app.info)
+
+
+def test_overview_group_drilldown_opens_matching_budget_project(monkeypatch):
+    from datetime import datetime, timedelta
+    from mori.core import default_settings, TAIPEI
+    monkeypatch.setenv('DEMO_MODE','true')
+    today = datetime.now(TAIPEI).date()
+    start,end = str(today-timedelta(days=7)),str(today-timedelta(days=1))
+    settings = default_settings()
+    settings['accounts'] = [{'key':'demo_meta','name':'Meta','platform':'meta','account_id':'1','meta_action_type':'booking'},
+                            {'key':'demo_google','name':'Google','platform':'google','account_id':'2','google_action_ids':['123']}]
+    settings['project_groups'] = [{'id':'fixture','name':'範例成效案','start':start,'end':end,'status':'已結案'}]
+    settings['projects'] = [{'id':p,'name':p,'account_key':'demo_'+p,'group_id':'fixture','start':start,'end':end,
+                             'status':'已結案','budget':20000,'keyword':'示範'} for p in ['meta','google']]
+    app = AppTest.from_file(APP,default_timeout=15)
+    app.session_state['demo_settings'] = settings
+    app.run()
+    app.button(key='overview_read').click().run()
+    app.selectbox(key='overview_project').set_value('fixture').run()
+    assert not app.exception
+    assert any('$18,900' in m.value and 'overview-kpi' in m.value for m in app.markdown)
+    app.button(key='overview_open_budget').click().run()
+    assert not app.exception
+    assert app.sidebar.radio[0].value == '專案預算'
+    assert app.session_state['budget_selected_project'] == 'group:fixture'
