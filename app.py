@@ -91,7 +91,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.27.56")
+st.sidebar.caption("系統版本：2026.11.27.57")
 pending_overview_budget = st.session_state.pop('overview_budget_target', None)
 if pending_overview_budget:
     st.session_state.navigation_page = '專案預算'
@@ -100,6 +100,7 @@ if pending_overview_budget:
     st.session_state.budget_nav_year = None
     st.session_state.budget_nav_search = ''
     st.session_state.budget_state_filter = '全部'
+    st.session_state.budget_category_filter = '全部'
 page = st.sidebar.radio("功能", ["數據總覽", "專案預算", "異常規則", "通知排程", "執行紀錄", "帳號與串接", "API 與權杖設定"], key="navigation_page")
 # First budget visit loads data. Navigation and filter changes reuse this
 # session snapshot; only the manual button requests another read.
@@ -189,36 +190,47 @@ if page == "數據總覽":
     if not settings["accounts"]:
         st.info("先到「帳號與串接」新增 Meta 或 Google Ads 帳號。")
     else:
-        keys, period, compare, read = overview_controls(names)
-        if read:
-            if len(period) != 2 or not keys:
-                st.error('請選擇完整日期與至少一個帳號。')
-            else:
-                def load_period(start, end):
-                    if demo:
-                        reports = []
-                        for account in [account_by_key[k] for k in keys]:
-                            result = next(r for r in demo_reports(start, end) if r['rows'][0]['platform'] == account['platform'])
-                            result['account_key'] = account['key']
-                            for row in result['rows']:
-                                row['account_key'] = account['key']
-                            reports.append(result)
-                        return reports, []
-                    return fetch_accounts([account_by_key[k] for k in keys],
-                                          lambda account: {**provider_for(account, creds).fetch_overview(account, start, end), 'account_key': account['key']})
-                with st.spinner('讀取廣告數據與比較期間…' if compare else '讀取廣告數據…'):
-                    reports, errors = load_period(*period)
-                    earlier = previous_period(period)
-                    previous_reports, previous_errors = load_period(*earlier) if compare else ([], [])
-                st.session_state.report_view = {'reports': reports, 'errors': errors, 'keys': keys,
-                    'loaded_keys': [r['account_key'] for r in reports], 'period': tuple(map(str, period)),
-                    'at': datetime.now(TAIPEI).isoformat(), 'comparison': compare,
-                    'previous_reports': previous_reports, 'previous_errors': previous_errors,
-                    'previous_period': tuple(map(str, earlier))}
-        @st.fragment
-        def overview_fragment(view):
-            render_overview(view, keys, period, settings, names, account_by_key)
-        overview_fragment(st.session_state.get("report_view"))
+        mode=st.radio('數據總覽模式',['廣告成效','檔期投資模型'],horizontal=True,key='overview_mode')
+        if mode=='檔期投資模型':
+            from mori.festival_ui import render_festival_model
+            model_store=store
+            if demo:
+                from mori.invoices import DemoInvoiceStore
+                if 'demo_festival_store' not in st.session_state:
+                    st.session_state.demo_festival_store=DemoInvoiceStore()
+                model_store=st.session_state.demo_festival_store
+            render_festival_model(settings,model_store,lambda a:provider_for(a,creds),save_settings)
+        else:
+            keys, period, compare, read = overview_controls(names)
+            if read:
+                if len(period) != 2 or not keys:
+                    st.error('請選擇完整日期與至少一個帳號。')
+                else:
+                    def load_period(start, end):
+                        if demo:
+                            reports = []
+                            for account in [account_by_key[k] for k in keys]:
+                                result = next(r for r in demo_reports(start, end) if r['rows'][0]['platform'] == account['platform'])
+                                result['account_key'] = account['key']
+                                for row in result['rows']:
+                                    row['account_key'] = account['key']
+                                reports.append(result)
+                            return reports, []
+                        return fetch_accounts([account_by_key[k] for k in keys],
+                                              lambda account: {**provider_for(account, creds).fetch_overview(account, start, end), 'account_key': account['key']})
+                    with st.spinner('讀取廣告數據與比較期間…' if compare else '讀取廣告數據…'):
+                        reports, errors = load_period(*period)
+                        earlier = previous_period(period)
+                        previous_reports, previous_errors = load_period(*earlier) if compare else ([], [])
+                    st.session_state.report_view = {'reports': reports, 'errors': errors, 'keys': keys,
+                        'loaded_keys': [r['account_key'] for r in reports], 'period': tuple(map(str, period)),
+                        'at': datetime.now(TAIPEI).isoformat(), 'comparison': compare,
+                        'previous_reports': previous_reports, 'previous_errors': previous_errors,
+                        'previous_period': tuple(map(str, earlier))}
+            @st.fragment
+            def overview_fragment(view):
+                render_overview(view, keys, period, settings, names, account_by_key)
+            overview_fragment(st.session_state.get("report_view"))
 
 elif page == "帳號與串接":
     st.info("平台權杖請到左側「API 與權杖設定」集中填寫；本頁只管理廣告帳號與訂位事件。")

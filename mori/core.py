@@ -51,6 +51,9 @@ def validate_settings(data):
         if not group.get("id") or group["id"] in group_ids or not str(group.get("name", "")).strip():
             raise AppError("專案名稱不可空白，專案代號不可重複。")
         group_ids.add(group["id"])
+        from mori.project_types import PROJECT_TYPES
+        if group.get('category') is not None and group['category'] not in PROJECT_TYPES:
+            raise AppError('專案分類請選擇檔期、新店開幕或特殊專案。')
         if group.get("status") not in ("準備中", "進行中", "已結案"):
             raise AppError("專案狀態不正確。")
         if date.fromisoformat(group["end"]) < date.fromisoformat(group["start"]):
@@ -118,6 +121,9 @@ def validate_settings(data):
     weekdays = schedule.get("weekdays", [])
     if not weekdays or any(type(d) is not int or d not in range(7) for d in weekdays):
         raise AppError("至少選擇一個有效的星期。")
+    model=data.get('festival_model',{})
+    if not isinstance(model,dict) or type(model.get('enabled',True)) is not bool or number(model.get('target_cpa',0))<0:
+        raise AppError('檔期模型設定不正確；CPA 上限須為非負數。')
     from mori.invoices import validate_invoices
     validate_invoices(data)
     return data

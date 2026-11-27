@@ -12,7 +12,7 @@ class UIStore:
     Each browser session owns an instance. Writes retain GitHub's SHA conflict
     checks; failed writes invalidate the snapshot rather than hiding a conflict.
     """
-    CACHEABLE = {"settings.json", "credentials.encrypted.json"}
+    CACHEABLE = {"settings.json", "credentials.encrypted.json", "festival-model.json"}
 
     def __init__(self, store, ttl=30, clock=time.monotonic):
         self.store, self.ttl, self.clock = store, ttl, clock

@@ -116,6 +116,25 @@ class MetaProvider:
     def fetch(self, account, start, end):
         return self._fetch(account, start, end, budget=False)
 
+    def fetch_model(self, account, start, end):
+        """Daily outcome series plus authoritative whole-period Meta costs."""
+        if not conversion_ready(account):
+            raise AppError('尚未設定 Meta 訂位事件，不能建立檔期模型。')
+        daily = self.fetch(account, start, end)
+        whole = self.fetch_budget(account, start, end)
+        verified = {str(r['ad_id']): r for r in whole['rows']}
+        fields = ('ad_name','adset_name','campaign_name','names_verified','verified_name_fields',
+                  'name_lookup_issue','current_status','name_source')
+        for row in daily['rows']:
+            current = verified.get(str(row.get('ad_id')), {})
+            row.update({key: current[key] for key in fields if key in current})
+            if not current:
+                row.update(names_verified=False, verified_name_fields=[], name_lookup_issue='未取得整段核對資料。')
+        daily['whole_rows'] = whole['rows']
+        daily['attribution_detail'] = True
+        daily['model_basis'] = 'Meta 整段花費核對＋逐日指定訂位事件'
+        return daily
+
     def fetch_overview(self, account, start, end):
         warnings = []
         try:
@@ -236,6 +255,9 @@ class MetaProvider:
                              "conversions": actions.get(action, 0.0) if action and not budget else None,
                              "conversion_value": values.get(action, 0.0) if action and not budget else None,
                              "available_actions": sorted(actions)})
+                if not budget:
+                    rows[-1]['spend_raw'] = item.get('spend')
+                    rows[-1]['conversion_raw'] = next((x.get('value') for x in item.get('actions', []) if x.get('action_type') == action), '0') if action else None
                 if overview:
                     rows[-1].update(campaign_objective=item.get('objective', ''),
                                     engagements=number(item['inline_post_engagement']) if item.get('inline_post_engagement') is not None else None)
@@ -343,6 +365,60 @@ class GoogleProvider:
                          "conversions": total, "conversion_value": value})
         return {"rows": rows, "currency": info["currencyCode"], "timezone": info.get("timeZone", "未提供"),
                 "account_name": info.get("descriptiveName", account["name"]), "conversion_ready": conversion_ready(account)}
+
+    def fetch_model(self, account, start, end):
+        """Join selected booking events to the same ad/asset-group daily units.
+
+        Costs are never queried together with conversion_action segmentation.
+        An unsupported conversion query fails this model source, not the overview.
+        """
+        if not conversion_ready(account):
+            raise AppError('尚未設定 Google 訂位事件，不能建立檔期模型。')
+        report = self.fetch_budget(account, start, end)
+        selected = account.get('google_conversion_mode','selected') == 'selected'
+        allowed = set(map(str,account.get('google_action_ids',[])))
+        ids_seen = set()
+        values = {}
+        for resource, unit, response_key in [('ad_group_ad','ad_group_ad.ad.id','adGroupAd'),
+                                               ('asset_group','asset_group.id','assetGroup')]:
+            is_asset = resource == 'asset_group'
+            if not any((r.get('channel') == 'PERFORMANCE_MAX') == is_asset for r in report['rows']):
+                continue
+            fields = ['campaign.id',unit,'segments.date']
+            fields += ['segments.conversion_action','metrics.all_conversions'] if selected else ['metrics.conversions']
+            sql = 'SELECT ' + ', '.join(fields) + ' FROM ' + resource + f" WHERE segments.date BETWEEN '{start}' AND '{end}'"
+            sql += " AND campaign.advertising_channel_type " + ("= 'PERFORMANCE_MAX'" if is_asset else "!= 'PERFORMANCE_MAX'")
+            for item in self.query(account,sql):
+                action = item.get('segments',{}).get('conversionAction','').split('/')[-1] if selected else 'primary'
+                if selected and action not in allowed:
+                    continue
+                uid = str(item[response_key]['id'] if is_asset else item[response_key]['ad']['id'])
+                key = (str(item['campaign']['id']),uid,item['segments']['date'],is_asset)
+                if (*key,action) in ids_seen:
+                    raise AppError('Google 模型訂位明細重複，已停止加總。')
+                ids_seen.add((*key,action))
+                raw = Decimal(str(item.get('metrics',{}).get('allConversions' if selected else 'conversions',0)))
+                if not raw.is_finite() or raw < 0:
+                    raise AppError('Google 訂位資料尚有無效值或負向調整，暫不建立模型。')
+                values[key] = values.get(key,Decimal(0)) + raw
+        known = set()
+        for row in report['rows']:
+            is_asset = bool(row.get('asset_group_id'))
+            key = (str(row['campaign_id']),str(row.get('asset_group_id') or row.get('ad_id')),row['date'],is_asset)
+            known.add(key)
+            row['conversions'] = float(values.get(key,Decimal(0)))
+            row['conversion_raw'] = str(values.get(key,Decimal(0)))
+        if any(v != 0 for key,v in values.items() if key not in known):
+            raise AppError('Google 訂位明細有尚未對應的廣告單位，模型暫不加總，避免漏列。')
+        detailed = {}
+        for row in report['rows']:
+            key = (str(row['campaign_id']),row['date'])
+            detailed[key] = detailed.get(key,Decimal(0)) + Decimal(row['conversion_raw'])
+        for row in report['campaign_rows']:
+            if row.get('conversions') is None or abs(detailed.get((str(row['campaign_id']),row['date']),Decimal(0))-Decimal(str(row['conversions']))) > Decimal('.000001'):
+                raise AppError('Google 活動與廣告明細的訂位尚未同步，模型保留上次成功結果，稍後重新核對。')
+        report['model_basis'] = 'Google 同一廣告／素材群組逐日花費與指定訂位事件'
+        return report
 
     def fetch_overview(self, account, start, end):
         report = self.fetch(account, start, end)

@@ -117,6 +117,7 @@ def test_budget_group_and_two_platform_plans_save_and_render_separate_progress(m
     app.sidebar.radio[0].set_value('專案預算').run()
     app.button(key='budget_nav_edit').click().run()
     next(x for x in app.text_input if x.label == '專案名稱').set_value('感謝祭')
+    next(x for x in app.selectbox if x.label == '廣告投放專案分類').set_value('檔期')
     next(x for x in app.date_input if x.label == '專案開始日').set_value(date(2026,10,1))
     next(x for x in app.date_input if x.label == '專案結束日').set_value(date(2026,11,30))
     next(x for x in app.button if x.label == '儲存專案資料').click().run()

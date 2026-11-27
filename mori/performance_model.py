@@ -202,7 +202,7 @@ def render_activity_comparison(frame, view, full_account_scope, missing_platform
 
 def render_sweet_spot(frame, view):
     st.divider()
-    st.subheader('預算上限與 CPA 甜蜜點')
+    st.subheader('單一活動的日花費觀察')
     st.caption('看「多花錢，多取得多少訂位」。每次按讀取數據後更新；歷史樣本採本次查詢區間，建議用近 90 天，再限定相同檔期與活動。')
     st.caption('先以同一活動建立觀察；整檔總預算上限仍需固定分配比例的專案試投資料，不能把各活動候選值直接相加。')
     mode=st.radio('模型檢視',['投入與邊際效益','新舊客 4:6 試算'],horizontal=True,key='model_mode')

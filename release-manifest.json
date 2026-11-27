@@ -1,6 +1,7 @@
 {
   "files": [
     ".github/workflows/check.yml",
+    ".github/workflows/festival-model.yml",
     ".github/workflows/monitor.yml",
     ".gitignore",
     ".streamlit/config.toml",
@@ -29,6 +30,8 @@
     "mori/core.py",
     "mori/credentials.py",
     "mori/dashboard.py",
+    "mori/festival_model.py",
+    "mori/festival_ui.py",
     "mori/field_guidance.py",
     "mori/google_creatives.py",
     "mori/invoice_ui.py",
@@ -40,6 +43,7 @@
     "mori/performance_model.py",
     "mori/project_matching.py",
     "mori/project_navigation.py",
+    "mori/project_types.py",
     "mori/providers.py",
     "mori/runner.py",
     "mori/storage.py",
@@ -60,6 +64,7 @@
     "tests/test_budgets.py",
     "tests/test_connection_ui.py",
     "tests/test_dashboard.py",
+    "tests/test_festival_model.py",
     "tests/test_google_budget_matching.py",
     "tests/test_integration.py",
     "tests/test_invoices.py",

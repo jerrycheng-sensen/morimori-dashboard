@@ -293,8 +293,13 @@ def _render_report(view, keys, period, settings, names, account_by_key):
     def group_name(key):
         return groups[key]['name'] if key in groups else grouped[key][0]['name']
     with st.container(border=True, key='overview_filters'):
+        from mori.project_types import PROJECT_TYPES, project_type
+        category = st.selectbox('專案分類', ['全部', *PROJECT_TYPES, '待分類'], key='overview_category')
+        visible_groups = {k:v for k,v in grouped.items() if category=='全部' or project_type(groups.get(k, v[0]))==category}
+        if st.session_state.get('overview_project') not in ['all', *visible_groups]:
+            st.session_state.overview_project='all'
         a, b = st.columns([1.25, 1])
-        group_id = a.selectbox('查看專案', ['all'] + list(grouped), format_func=lambda k: '全部帳號資料' if k == 'all' else group_name(k), key='overview_project')
+        group_id = a.selectbox('查看專案', ['all'] + list(visible_groups), format_func=lambda k: '全部帳號資料' if k == 'all' else group_name(k), key='overview_project')
         platform = b.radio('查看平台', ['all', 'meta', 'google'], format_func=lambda k: '雙平台' if k == 'all' else PLATFORMS[k], horizontal=True, key='overview_platform')
     selected_plans = grouped.get(group_id)
     if selected_plans and platform != 'all':
@@ -303,10 +308,12 @@ def _render_report(view, keys, period, settings, names, account_by_key):
             st.info('此專案沒有設定這個平台的計畫。')
             return
     issue = ''
-    shown, issue = project_slice(df, selected_plans, view['period']) if selected_plans else (df, '')
+    category_plans = [p for members in visible_groups.values() for p in members] if category != '全部' else None
+    scope_plans = selected_plans if selected_plans else category_plans
+    shown, issue = project_slice(df, scope_plans, view['period']) if scope_plans is not None else (df, '')
     before = previous
-    if selected_plans and before is not None:
-        before, previous_issue = project_slice(before, selected_plans, view.get('previous_period', previous_period(view['period'])))
+    if scope_plans is not None and before is not None:
+        before, previous_issue = project_slice(before, scope_plans, view.get('previous_period', previous_period(view['period'])))
         if previous_issue:
             before = None
     if platform != 'all':
@@ -322,7 +329,7 @@ def _render_report(view, keys, period, settings, names, account_by_key):
     if shown.empty:
         st.info('此專案／平台在查詢區間沒有符合條件的廣告資料。')
         return
-    relevant_keys = [p['account_key'] for p in selected_plans] if selected_plans else view['keys']
+    relevant_keys = [p['account_key'] for p in scope_plans] if scope_plans is not None else view['keys']
     relevant_keys = [k for k in relevant_keys if platform == 'all' or account_by_key[k]['platform'] == platform]
     loaded = set(view.get('loaded_keys', [r['account_key'] for r in df.to_dict('records')]))
     incomplete = bool(set(relevant_keys) - loaded)
@@ -376,18 +383,19 @@ def _render_report(view, keys, period, settings, names, account_by_key):
                     st.write(f'CTR {100*clicks/impressions:.2f}%' if impressions else 'CTR —')
                     money_metric(st, 'CPC', totals(values)['spend']/Decimal(str(clicks)) if clicks else None, p)
     from mori.performance_model import render_activity_comparison, render_sweet_spot
-    render_activity_comparison(shown, view, selected_plans is None,
+    render_activity_comparison(shown, view, scope_plans is None,
                                {account_by_key[k]['platform'] for k in relevant_keys if k not in loaded})
-    if not incomplete:
-        render_sweet_spot(shown, view)
-    else:
-        st.info('帳號資料尚未完整，暫不建立甜蜜點觀察。')
+    with st.expander('進階：單一活動日花費觀察與新舊客試算'):
+        if not incomplete:
+            render_sweet_spot(shown, view)
+        else:
+            st.info('帳號資料尚未完整，暫不建立活動觀察。')
     if grouped:
         st.divider()
         st.subheader('各專案成效')
         st.caption('依各專案條件與廣告走期認列；專案可能重疊，不加總成帳號總花費。')
         project_rows, project_platforms = [], []
-        for gid, group_plans in grouped.items():
+        for gid, group_plans in visible_groups.items():
             if selected_plans and gid != group_id: continue
             relevant = [p for p in group_plans if platform == 'all' or account_by_key[p['account_key']]['platform'] == platform]
             if not relevant: continue

@@ -328,6 +328,9 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
                                f"已設定 {sum(p.get('group_id') == group_id for p in plans)} 個平台計畫" if group else '完成後，再往下新增平台投放計畫')
                 with st.form('budget_group_' + group_id):
                     name = st.text_input('專案名稱', group.get('name', ''), placeholder='例如：感謝祭')
+                    from mori.project_types import PROJECT_TYPES, project_type
+                    categories = ['請選擇分類', *PROJECT_TYPES]
+                    category = st.selectbox('廣告投放專案分類', categories, index=categories.index(project_type(group)) if project_type(group) in categories else 0, key='budget_category_' + group_id)
                     a, b = st.columns(2)
                     start = a.date_input('專案開始日', date.fromisoformat(group['start']) if group else today)
                     end = b.date_input('專案結束日', date.fromisoformat(group['end']) if group else today)
@@ -338,7 +341,9 @@ def render_budgets(settings, fetch, persist, documents=None, account_fetch=None)
                     st.caption('總覽的檔期狀態依日期判斷；這裡的管理狀態控制異常檢查。只結束廣告時，請結案下方平台計畫，保留仍在進行的專案檔期。')
                     if st.form_submit_button('儲存專案資料', type='primary', width='stretch'):
                         try:
-                            updated = save_group(settings, {'id': group.get('id', uuid.uuid4().hex), 'name': name.strip(),
+                            if category not in PROJECT_TYPES:
+                                raise AppError('請選擇廣告投放專案分類。')
+                            updated = save_group(settings, {'category': category, 'id': group.get('id', uuid.uuid4().hex), 'name': name.strip(),
                                                             'start': str(start), 'end': str(end), 'status': status})
                             st.session_state.pending_budget_group = next(g['id'] for g in updated['project_groups'] if g['id'] not in groups) if not group else group['id']
                             persist(updated, notice='專案資料已儲存。接著在下方新增各平台投放計畫。')
@@ -478,7 +483,11 @@ def render_project_rail(settings, today):
         year = st.selectbox('專案年度', year_options, format_func=lambda y: f'{y} 年' if y else '所有年度', key='budget_nav_year')
         query = st.text_input('搜尋專案', placeholder='輸入名稱，例如：感謝祭', key='budget_nav_search')
         state = st.selectbox('檔期狀態', ['全部', *STATES], key='budget_state_filter')
+        from mori.project_types import PROJECT_TYPES, project_type
+        category = st.selectbox('專案分類', ['全部', *PROJECT_TYPES, '待分類'], key='budget_category_filter')
         visible = filter_entries(entries, year, query, state)
+        if category != '全部':
+            visible = [e for e in visible if project_type(e) == category]
         valid_ids = {e['nav_id'] for e in visible}
         selected = st.session_state.get('budget_selected_project', 'all')
         if selected != 'all' and selected not in valid_ids:
@@ -590,6 +599,8 @@ def render_budget_results(settings, fetch, entries):
             ads_phase = advertising_state(children, today)
             removed = removed_ad_rows(children, accounts, results)
             st.markdown(project_header(group['name'], phase, ads_phase, removed_ad_count(removed)), unsafe_allow_html=True)
+            from mori.project_types import project_type
+            st.caption('專案分類：' + project_type(group))
             render_removed_ad_notice(removed)
             from mori.invoice_ui import funding_badge
             if children:
