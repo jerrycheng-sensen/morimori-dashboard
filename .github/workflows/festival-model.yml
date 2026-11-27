@@ -4,7 +4,7 @@ on:
     branches: [main]
     paths: ['.github/workflows/festival-model.yml']
   schedule:
-    - cron: '15 1 * * *'
+    - cron: '15 */6 * * *'
   workflow_dispatch:
 permissions:
   contents: read

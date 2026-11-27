@@ -31,3 +31,12 @@ def baseline_groups(settings):
             raise AppError('模型基礎專案須分類為檔期：' + name)
         output.append(found[0])
     return output
+
+
+def festival_groups(settings):
+    """All explicitly classified festivals; confirmed legacy baselines still work."""
+    groups=[g for g in settings.get('project_groups',[]) if project_type(g)=='檔期']
+    if not groups:
+        from mori.core import AppError
+        raise AppError('尚無檔期專案；請在專案預算將廣告專案分類為「檔期」。')
+    return sorted(groups,key=lambda g:(g.get('start',''),g['id']))

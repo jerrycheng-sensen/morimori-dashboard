@@ -111,7 +111,7 @@ if st.session_state.get('last_navigation_page') != page:
     st.session_state.last_navigation_page = page
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
 with st.sidebar.expander("系統資訊與外觀"):
-    st.caption("系統版本：2026.11.27.58")
+    st.caption("系統版本：2026.11.27.59")
     logo = st.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
     if logo:
         st.image(logo, width=180)

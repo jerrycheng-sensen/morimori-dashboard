@@ -564,3 +564,12 @@ negative balances, failure/unset/future distinctions, overlap rejection and the
 existing initial/manual-only navigation, ledger, invoice and provider suites.
 No live values or deployed responsive screenshot have been independently
 verified after this change.
+
+
+### 檔期投放模型（2026.11.27.59）
+
+預設顯示全部「檔期」分類的集合模型，也可切換個別檔期。新檔樣本不足時仍列出實績與七日觀察；結案狀態不會停止讀取或排除模型。上方顯示總檔數與可擬合檔數，細節可展開核對。
+
+「舊客量體來源」僅選實際 Meta 再行銷廣告組合及 Google 品牌搜尋活動，不需要填 CPA 上限。沒有確認來源就顯示缺口，不產生預算數字。量體上限是以現有母體、歷史頻次／CPM、品牌搜尋量／CTR／CPC形成的條件推估，與最低平均 CPA 的曲線判斷分開；不代表獲利最適上限。新舊客4:6不能直接換成預算4:6。
+
+開頁或操作時檢查一小時快取；背景每六小時更新，可手動立即重讀。明細含今天的暫定回報，模型擬合避開今天及前三天。圖上邊界最低值會標示暫估，不再直接隱藏；跨檔回測未通過時呈現歷史觀察。所有金額為未稅廣告費，不含服務費。

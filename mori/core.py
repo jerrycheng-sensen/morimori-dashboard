@@ -124,6 +124,8 @@ def validate_settings(data):
     model=data.get('festival_model',{})
     if not isinstance(model,dict) or type(model.get('enabled',True)) is not bool or number(model.get('target_cpa',0))<0:
         raise AppError('檔期模型設定不正確；CPA 上限須為非負數。')
+    from mori.retention_capacity import validate_config
+    validate_config(data)
     from mori.invoices import validate_invoices
     validate_invoices(data)
     return data

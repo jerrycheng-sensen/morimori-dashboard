@@ -237,7 +237,7 @@ def test_app_model_mode_no_data_shows_setup_without_fake_numbers(monkeypatch):
     monkeypatch.setenv('DEMO_MODE','true')
     app=AppTest.from_file(str(Path(__file__).parents[1]/'app.py'),default_timeout=15).run()
     app.radio(key='overview_mode').set_value('檔期投資模型').run()
-    assert not app.exception and any('模型基礎專案' in x.value for x in app.info)
+    assert not app.exception and any('尚無檔期專案' in x.value for x in app.info)
 
 
 def test_malformed_provider_retains_last_snapshot_and_redacts_exception():
@@ -247,3 +247,59 @@ def test_malformed_provider_retains_last_snapshot_and_redacts_exception():
     bad=refresh_snapshot(store,s,invalid,now+timedelta(days=1))
     assert bad['projects']==good['projects'] and bad['fit']==good['fit']
     assert 'sensitive' not in bad['last_error']
+
+
+def test_all_festival_categories_and_status_independent_signature():
+    from mori.festival_model import source_signature
+    from mori.project_types import festival_groups
+    s=settings();s['project_groups'].append({'id':'third','name':'下一檔','category':'檔期','start':'2026-11-01','end':'2026-12-31','status':'準備中'})
+    assert len(festival_groups(s))==3
+    signature=source_signature(s)
+    for g in s['project_groups']: g['status']='進行中'
+    for p in s['projects']: p['status']='進行中'
+    assert source_signature(s)==signature
+    s['projects'][0]['end']='2026-12-31'
+    p=Provider();out=collect_projects(s,lambda _:p,datetime(2026,11,27,tzinfo=TAIPEI))
+    assert out[0]['read_through']=='2026-11-27'
+
+
+def test_individual_fit_bad_new_project_does_not_hide_other_flights():
+    from mori.festival_model import build_models,current_projection
+    data=synthetic();data.append({'id':'new','name':'新檔','rows':data[0]['rows'][:5]})
+    for p in data: p.setdefault('name',p['id'])
+    models=build_models(data,date(2026,9,1))
+    assert models['individual']['new']['status']=='insufficient'
+    assert models['aggregate']['included_ids']==['0','1']
+    assert models['aggregate']['fit']['status']=='estimated'
+    assert current_projection(models['individual']['new'],data[2],30)['candidate']['basis']=='historical_observation'
+
+
+def test_boundary_result_visible_without_calling_it_validated_optimum():
+    from mori.festival_model import current_projection
+    fit=fit_projects(synthetic(),date(2026,9,1));fit['slope']=1
+    result=current_projection(fit,synthetic()[0],30)
+    assert result['sweet'] is None and result['candidate']['basis']=='model_boundary'
+    assert '尚未證明' in result['diagnosis']
+
+
+def test_snapshot_hourly_refresh_not_waiting_for_closure_or_midnight():
+    s=settings();p=Provider();store=Store();now=datetime(2026,11,27,10,tzinfo=TAIPEI)
+    old=refresh_snapshot(store,s,lambda _:p,now);p.bookings='4.5'
+    assert refresh_snapshot(store,s,lambda _:p,now+timedelta(minutes=30))==old
+    result=refresh_snapshot(store,s,lambda _:p,now+timedelta(minutes=61))
+    assert result['projects'][0]['bookings']=='4.5'
+
+
+def test_normalized_pool_accepts_more_than_two_flights_without_summing_budget():
+    from mori.festival_model import build_models,current_projection
+    data=synthetic();third=copy.deepcopy(data[0]);third['id']='third'
+    for row in third['rows']:
+        row['spend']=str(Decimal(row['spend'])*10)
+        row['bookings']=str(Decimal(row['bookings'])*10)
+    data.append(third)
+    for p in data: p['name']=p['id']
+    models=build_models(data,date(2026,9,1))
+    assert models['aggregate']['fit']['status']=='estimated'
+    assert models['aggregate']['included_ids']==['0','1','third']
+    result=current_projection(models['aggregate']['fit'],{'id':'all'},30)
+    assert result['candidate'] and result['candidate']['budget']<100000

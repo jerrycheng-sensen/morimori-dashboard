@@ -1,4 +1,4 @@
-"""Two whole-project advertising response model and private daily snapshots.
+"""All-festival advertising response models and private snapshots.
 
 A small, explicitly observational Hill response fit; not Meridian, causal lift,
 operating ROI, or a proof that spend caused bookings. No operational data used.
@@ -10,19 +10,21 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from mori.core import AppError, TAIPEI
-from mori.project_types import baseline_groups
+from mori.project_types import festival_groups
 from mori.project_matching import verified_match, unit_identity
 
 SNAPSHOT_PATH = 'festival-model.json'
-VERSION = 1
+VERSION = 2
 
 
 def source_signature(settings):
-    groups = baseline_groups(settings)
+    groups = festival_groups(settings)
     ids = {g['id'] for g in groups}
     plans = [p for p in settings['projects'] if p.get('group_id') in ids]
     keys = {p['account_key'] for p in plans}
-    value = [VERSION,groups,plans,[a for a in settings['accounts'] if a['key'] in keys],settings.get('budget_transactions',[])]
+    for scope in settings.get('festival_model',{}).get('capacity_scopes',{}).values():
+        keys.update(v['account_key'] for v in scope.values() if isinstance(v,dict) and v.get('account_key'))
+    value = [VERSION,[{k:v for k,v in g.items() if k!='status'} for g in groups],[{k:v for k,v in p.items() if k!='status'} for p in plans],[a for a in settings['accounts'] if a['key'] in keys],settings.get('budget_transactions',[]),settings.get('festival_model',{}).get('capacity_scopes',{})]
     return hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
 
 
@@ -39,12 +41,12 @@ def numeric(value):
 def collect_projects(settings, factory, now):
     """Read complete ad windows regardless of project/plan management status."""
     from mori.budget_ledger import balance
-    through = now.astimezone(TAIPEI).date()-timedelta(days=1)
+    through = now.astimezone(TAIPEI).date()
     accounts = {a['key']:a for a in settings['accounts']}
     output, cache, ownership = [], {}, {}
-    for group in baseline_groups(settings):
+    for group in festival_groups(settings):
         plans = [p for p in settings['projects'] if p.get('group_id')==group['id']]
-        if not plans: raise AppError('檔期尚未設定平台投放計畫。')
+        if not plans: continue
         days, currencies = {}, set()
         planned_start = min(date.fromisoformat(p['start']) for p in plans)
         planned_end = max(date.fromisoformat(p['end']) for p in plans)
@@ -75,7 +77,7 @@ def collect_projects(settings, factory, now):
                 if not identity: raise AppError('模型明細缺少穩定廣告 ID。')
                 unit_key=(account['key'],str(row['date']),identity['kind'],identity['id'])
                 if unit_key in ownership:
-                    raise AppError('兩檔或平台計畫認列重疊，暫不建立模型，請先核對專案條件。')
+                    raise AppError('檔期或平台計畫認列重疊，暫不建立模型，請先核對專案條件。')
                 ownership[unit_key]=group['id']
                 item=days.setdefault(str(row['date']),{'spend':Decimal(0),'bookings':Decimal(0)})
                 item['spend']+=cost;item['bookings']+=bookings
@@ -96,7 +98,8 @@ def collect_projects(settings, factory, now):
             plan_audit.append({'plan_id':plan['id'],'platform':account['platform'],'since':str(start),'until':str(end),
                                'daily_cost':str(plan_daily),'whole_cost':str(plan_authoritative),
                                'difference':str(plan_daily-plan_authoritative),'event':account.get('meta_action_type') if account['platform']=='meta' else account.get('google_action_ids',[])})
-        if len(currencies)!=1: raise AppError('模型兩檔的帳號幣別須一致且完整。')
+        if not currencies and planned_start>through: continue
+        if len(currencies)!=1: raise AppError('同檔期的帳號幣別須一致且完整。')
         first,last = planned_start,min(planned_end,through)
         if first>last: raise AppError('檔期尚無可讀取的廣告日期。')
         rows=[]
@@ -114,7 +117,7 @@ def collect_projects(settings, factory, now):
                        'last_paid_date':max((r['date'] for r in rows if numeric(r['spend'])>0),default=None),
                        'rows':rows,'audit':plan_audit})
     if len({p['currency'] for p in output})!=1:
-        raise AppError('兩檔幣別不同，不能合併訓練。')
+        raise AppError('檔期幣別不同或尚無已開始的廣告資料，不能合併訓練。')
     return output
 
 
@@ -150,7 +153,7 @@ def fit_projects(projects, through):
         if len(rows)<28 or len(active)<21 or len(set(active))<8 or sum(y for x,y in rows)<30:
             return {'status':'insufficient','reason':'每檔至少需 28 個成熟資料日、21 個有花費日、8 種日花費及 30 次訂位；門檻是操作護欄，不是統計證明。'}
         series[p['id']]=rows
-    if len(series)!=2: return {'status':'insufficient','reason':'需完整兩檔資料。'}
+    if not series: return {'status':'insufficient','reason':'至少需一檔可用資料。'}
     training={gid:rows[:max(1,int(len(rows)*.75))] for gid,rows in series.items()}
     if any(not any(x>0 for x,y in rows) for rows in training.values()):
         return {'status':'unreliable','reason':'訓練期間缺少有效花費變化，暫不推估。'}
@@ -167,7 +170,7 @@ def fit_projects(projects, through):
     fitted=_fit(series)
     fitted.update(status='estimated',checks=checks,
                   ranges={gid:[min(x for x,y in rows if x>0),max(x for x,y in rows)] for gid,rows in series.items()},
-                  reason='兩檔共同形狀、各檔各自規模的廣告歸因反應曲線；未控制競價、素材、星期、受眾及延遲效應，不是因果或營運 ROI 模型。')
+                  reason='檔期反應形狀、各檔各自規模的廣告歸因反應曲線；未控制競價、素材、星期、受眾及延遲效應，不是因果或營運 ROI 模型。')
     return fitted
 
 
@@ -199,19 +202,92 @@ def projection(fit, project_id, duration_days, target_cpa=0):
     return {'sweet':sweet,'upper':upper,'curve':points}
 
 
+
+def observed_candidate(project, duration_days):
+    """Best observed seven-day block, explicitly not an identified global optimum."""
+    rows=sorted(project.get('rows',[]),key=lambda r:r['date'])
+    blocks=[]
+    for i in range(0,len(rows),7):
+        block=rows[i:i+7]
+        cost=sum((numeric(r['spend']) for r in block),Decimal(0))
+        bookings=sum((numeric(r['bookings']) for r in block),Decimal(0))
+        if cost>0 and bookings>0:
+            blocks.append({'budget':float(cost/len(block)*duration_days),'cpa':float(cost/bookings),
+                           'bookings':float(bookings/len(block)*duration_days),'since':block[0]['date'],
+                           'until':block[-1]['date'],'days':len(block),'basis':'historical_observation'})
+    complete=[b for b in blocks if b['days']==7]
+    return min(complete or blocks,key=lambda b:b['cpa'],default=None)
+
+
+def current_projection(fit, project, duration_days):
+    result=projection(fit,project['id'],duration_days)
+    if result['sweet']:
+        result.update(candidate={**result['sweet'],'basis':'model_interior'},diagnosis='曲線出現內部最低點；仍屬觀察模型估計。')
+    elif result['curve']:
+        points=[p for p in result['curve'] if p['cpa'] is not None]
+        candidate=min(points,key=lambda p:p['cpa'],default=None)
+        result.update(candidate={**candidate,'basis':'model_boundary'} if candidate else None,
+                      diagnosis='目前最低 CPA 位於已觀察投入範圍的邊界。可查看當下較佳投入，但尚未證明真正最低點。')
+    else:
+        result.update(candidate=observed_candidate(project,duration_days),
+                      diagnosis=fit.get('reason','資料仍在累積。')+' 先呈現目前較佳的歷史觀察區間，不冒充已驗證甜蜜點。')
+    return result
+
+
+def build_models(projects, through):
+    """Independent flight models and an equal-flight, intensity-normalized pool."""
+    import statistics
+    individual={p['id']:fit_projects([p],through) for p in projects}
+    eligible=[p for p in projects if individual[p['id']].get('status')=='estimated']
+    diagnostics=[{'id':p['id'],'name':p['name'],'status':individual[p['id']]['status'],
+                  'reason':individual[p['id']].get('reason','')} for p in projects]
+    if not eligible:
+        aggregate={'status':'insufficient','reason':'目前尚無通過樣本與回測檢查的檔期；仍顯示各檔歷史資料與當下觀察。'}
+    else:
+        series={};scales={}
+        for p in eligible:
+            rows=[(float(numeric(r['spend'])),float(numeric(r['bookings']))) for r in p['rows'] if r['date']<=str(through)]
+            xscale=statistics.mean(x for x,y in rows if x>0)
+            yscale=statistics.mean(y for x,y in rows)
+            scales[p['id']]=(xscale,yscale)
+            series[p['id']]=[(x/xscale,y/yscale) for x,y in rows]
+        training={gid:rows[:int(len(rows)*.75)] for gid,rows in series.items()}
+        trial=_fit(training);checks=[]
+        for gid,rows in series.items():
+            hold=rows[len(training[gid]):]
+            rmse=math.sqrt(sum((y-trial['amplitudes'][gid]*hill(x,trial['k'],trial['slope']))**2 for x,y in hold)/len(hold))
+            checks.append({'id':gid,'holdout_days':len(hold),'normalized_rmse':rmse/max(statistics.mean(y for x,y in hold),1e-9)})
+        if any(c['normalized_rmse']>.5 for c in checks):
+            aggregate={'status':'unreliable','reason':'集合模型的跨檔回測誤差過高；個別檔期與實際觀察仍可查看。','checks':checks}
+        else:
+            fitted=_fit(series)
+            dx=statistics.median(s[0] for s in scales.values());dy=statistics.median(s[1] for s in scales.values())
+            aggregate={'status':'estimated','k':fitted['k']*dx,'slope':fitted['slope'],
+                       'amplitudes':{'all':statistics.median(fitted['amplitudes'].values())*dy},
+                       'ranges':{'all':[statistics.median(min(x for x,y in rows if x>0) for rows in series.values())*dx,
+                                        statistics.median(max(x for x,y in rows) for rows in series.values())*dx]},
+                       'checks':checks,'eligible_ids':[p['id'] for p in eligible],
+                       'reason':'按各檔日花費與訂位規模正規化，等權重學習共同反應；換回歷史中位規模作為典型檔期情境，不是全部檔期預算相加。'}
+    return {'individual':individual,'aggregate':{'fit':aggregate,'included_ids':[p['id'] for p in eligible],
+             'total_count':len(projects),'diagnostics':diagnostics}}
+
 def refresh_snapshot(store, settings, factory, now=None, force=False):
     now=now or datetime.now(TAIPEI)
     previous,sha=store.read(SNAPSHOT_PATH,{})
     signature=source_signature(settings)
     today=str(now.astimezone(TAIPEI).date())
-    if not force and previous.get('source_signature')==signature and previous.get('success_date')==today:
+    if not force and previous.get('source_signature')==signature and previous.get('updated_at') and now-datetime.fromisoformat(previous['updated_at'])<timedelta(hours=1):
         return previous
     try:
         projects=collect_projects(settings,factory,now)
         through=now.astimezone(TAIPEI).date()-timedelta(days=4)
-        fit=fit_projects(projects,through)
+        models=build_models(projects,through)
+        fit=models['aggregate']['fit']
+        from mori.retention_capacity import collect_capacity_sources,collect_catalogs
+        capacities=collect_capacity_sources(settings,factory,now)
+        catalogs=collect_catalogs(settings,factory)
         snapshot={'version':VERSION,'source_signature':signature,'updated_at':now.isoformat(),
-                  'success_date':today,'mature_through':str(through),'projects':projects,'fit':fit,'last_error':None}
+                  'success_date':today,'mature_through':str(through),'projects':projects,'fit':fit,'models':models,'capacities':capacities,'source_catalogs':catalogs,'last_error':None}
     except Exception as exc:
         reason=str(exc) if isinstance(exc,AppError) else '模型資料格式或運算尚未完成，保留上次成功結果，請核對來源後重試。'
         snapshot={**previous,'last_attempt':now.isoformat(),'last_error':reason}

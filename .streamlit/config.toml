@@ -3,9 +3,9 @@ primaryColor = "#17421E"
 backgroundColor = "#f5f6f3"
 secondaryBackgroundColor = "#ffffff"
 textColor = "#173426"
-font = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
-headingFont = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
-codeFont = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
+font = "'Microsoft JhengHei', 'Microsoft JhengHei UI', '微軟正黑體', sans-serif"
+headingFont = "'Microsoft JhengHei', 'Microsoft JhengHei UI', '微軟正黑體', sans-serif"
+codeFont = "'Microsoft JhengHei', 'Microsoft JhengHei UI', '微軟正黑體', sans-serif"
 
 [server]
 headless = true
@@ -14,9 +14,9 @@ headless = true
 showErrorDetails = false
 
 [theme.sidebar]
-font = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
-headingFont = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
-codeFont = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
+font = "'Microsoft JhengHei', 'Microsoft JhengHei UI', '微軟正黑體', sans-serif"
+headingFont = "'Microsoft JhengHei', 'Microsoft JhengHei UI', '微軟正黑體', sans-serif"
+codeFont = "'Microsoft JhengHei', 'Microsoft JhengHei UI', '微軟正黑體', sans-serif"
 primaryColor = "#BCA171"
 backgroundColor = "#10291D"
 secondaryBackgroundColor = "#17421E"

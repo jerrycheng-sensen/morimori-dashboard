@@ -1,9 +1,9 @@
 /* MORI workspace — one shared visual language for every screen. */
 :root{--mori-brand:#17421e;--mori-ink:#172b23;--mori-muted:#627068;--mori-surface:#fff;--mori-canvas:#f5f6f3;--mori-line:#e3e8e1;--mori-gold:#a48652;--mori-soft:#edf2ec;--mori-radius:20px;--mori-shadow:0 6px 24px #172b2305;--mori-accent:#bca171;}
-html,body,[data-testid="stApp"]{font-family:"Microsoft JhengHei","微軟正黑體",sans-serif!important;}
-[data-testid="stApp"] *:not([data-testid="stIconMaterial"]):not([data-testid="stExpanderIcon"]):not([class*="material-symbols"]){font-family:"Microsoft JhengHei","微軟正黑體",sans-serif!important;}
+html,body,[data-testid="stApp"]{font-family:"Microsoft JhengHei","Microsoft JhengHei UI","微軟正黑體",sans-serif!important;}
+[data-testid="stApp"] *:not([data-testid="stIconMaterial"]):not([data-testid="stExpanderIcon"]):not([class*="material-symbols"]){font-family:"Microsoft JhengHei","Microsoft JhengHei UI","微軟正黑體",sans-serif!important;}
 [data-testid="stIconMaterial"],[data-testid="stExpanderIcon"],[class*="material-symbols"]{font-family:"Material Symbols Rounded"!important;}
-body [role="tooltip"],body [role="listbox"],body [role="option"],body [data-baseweb="popover"],body [data-baseweb="popover"] *{font-family:"Microsoft JhengHei","微軟正黑體",sans-serif!important;}
+body [role="tooltip"],body [role="listbox"],body [role="option"],body [data-baseweb="popover"],body [data-baseweb="popover"] *{font-family:"Microsoft JhengHei","Microsoft JhengHei UI","微軟正黑體",sans-serif!important;}
 [data-testid="stAppViewContainer"]{background:var(--mori-canvas)!important;background-image:none!important;color:var(--mori-ink);}
 [data-testid="stHeader"]{background:#f5f6f3e8!important;backdrop-filter:blur(16px);border-bottom:0;}
 [data-testid="stMainBlockContainer"]{max-width:1580px!important;padding:3.7rem 3.3rem 4rem!important;}
@@ -201,3 +201,25 @@ body [role="tooltip"],body [role="listbox"],body [role="option"],body [data-base
 .mori-editor-intro{background:transparent!important;padding:8px 0 20px!important;margin:8px 0!important;border-bottom:1px solid var(--mori-line);border-radius:0!important;}
 .mori-editor-intro strong{color:#172b23!important;font-size:26px!important;}.mori-editor-intro p{color:#627068!important;font-size:15px!important;}
 @media(min-width:1000px){[data-testid="stSidebar"]{width:248px!important;min-width:248px!important;max-width:248px!important;}}
+
+/* Readable decision workspace: 18px body, 16px supporting text, 48px results. */
+[data-testid="stMain"] p{font-size:18px;line-height:1.8;}
+[data-testid="stCaptionContainer"] p{font-size:16px!important;}
+[data-testid="stMain"] [data-testid="stWidgetLabel"] p,
+[data-testid="stMain"] input,[data-testid="stMain"] textarea,
+[data-testid="stMain"] button p,[data-testid="stMain"] [data-baseweb="select"]{font-size:17px!important;}
+[data-testid="stMain"] [data-testid="stExpander"] summary p{font-size:17px!important;}
+.mori-page-header p,.mori-section-heading p{font-size:18px!important;}
+.mori-insight{min-height:248px;padding:30px;}
+.mori-insight-head{font-size:18px;line-height:1.6;margin-bottom:24px;align-items:flex-start;flex-wrap:wrap;}
+.mori-insight-tag{font-size:14px;}
+.mori-insight-value{font-size:clamp(38px,3.3vw,54px);}
+.mori-insight-note,.mori-history-stats>div>span,.mori-live-status{font-size:16px!important;}
+.mori-history-top h3{font-size:23px!important;}.mori-history-top p{font-size:16px!important;}
+.mori-history-stats strong{font-size:29px;}.mori-history-index{font-size:15px;}
+.model-diagnosis{border:1px solid #dce5d5;border-left:4px solid #bca171;border-radius:14px;background:#edf2e9;padding:22px 26px;color:#2a4830;font-size:18px;line-height:1.85;}
+.model-diagnosis strong{display:block;font-size:20px;margin-bottom:7px;}
+.model-diagnosis p{margin:0!important;}
+.st-key-festival_workspace [data-testid="stVerticalBlock"]{gap:24px;}
+.st-key-festival_toolbar{padding:22px!important;background:white!important;border:1px solid var(--mori-line)!important;border-radius:16px!important;}
+@media(max-width:760px){.mori-page-header p{font-size:17px!important;}.mori-insight{min-height:0;padding:25px;}.mori-insight-value{font-size:43px;}.mori-insight-head{margin-bottom:18px;}.mori-insight-note{margin-top:18px!important;}.model-diagnosis{padding:20px;font-size:17px;}.st-key-festival_toolbar{padding:18px!important;}}

@@ -42,7 +42,10 @@ render_festival_model(st.session_state.config,store,no_fetch,persist)
     app.selectbox(key='festival_reference').select('1').run()
     app.radio(key='festival_curve').set_value('邊際 CPA').run()
     assert not app.exception and 'saved' not in app.session_state
-    next(e for e in app.number_input if e.label=='可接受的加碼訂位成本').set_value(80.)
-    next(e for e in app.button if e.label=='儲存模型設定').click().run()
-    assert not app.exception and app.session_state.saved['festival_model']['target_cpa']=='80.0'
+    assert not any('成本' in e.label for e in app.number_input)
+    app.checkbox(key='festival_enabled').uncheck()
+    app.button(key='festival_save_sources').click().run()
+    assert not app.exception and app.session_state.saved['festival_model']['enabled'] is False
+    assert 'target_cpa' not in app.session_state.saved['festival_model']
+    assert app.session_state.saved['projects']==before['projects']
     assert app.session_state.config==before and app.session_state.snapshot==snapshot
