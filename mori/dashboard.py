@@ -155,14 +155,14 @@ def overview_controls(names):
     with st.container(key='overview_query', border=True):
         a, b, c = st.columns([1.4, .9, .65], vertical_alignment='bottom')
         keys = a.multiselect('廣告帳號', list(names), default=list(names), format_func=names.get, key='overview_accounts')
-        preset = b.selectbox('查詢期間', ['近 7 天', '昨天', '近 30 天', '本月', '自訂日期'], key='overview_period_preset')
+        preset = b.selectbox('查詢期間', ['近 7 天', '昨天', '近 30 天', '近 90 天', '本月', '自訂日期'], key='overview_period_preset')
         compare = c.checkbox('與前期比較', value=True, help='使用相同天數；例如本次 7 天，就與前 7 天比較。', key='overview_compare')
         today = datetime.now(TAIPEI).date()
         yesterday = today - timedelta(days=1)
         if preset == '自訂日期':
             period = st.date_input('查詢區間（依各廣告帳號時區）', (today-timedelta(days=7), yesterday), max_value=today, key='overview_custom_period')
         else:
-            start = yesterday if preset == '昨天' else today.replace(day=1) if preset == '本月' else today-timedelta(days=30 if preset == '近 30 天' else 7)
+            start = yesterday if preset == '昨天' else today.replace(day=1) if preset == '本月' else today-timedelta(days=90 if preset == '近 90 天' else 30 if preset == '近 30 天' else 7)
             period = (start, max(start, yesterday))
         read = st.button('讀取數據', type='primary', icon=':material/refresh:', key='overview_read')
         if len(period) == 2:
@@ -272,6 +272,9 @@ def _render_report(view, keys, period, settings, names, account_by_key):
     errors = view.get('errors', [])
     for error in errors:
         st.error(error)
+    for report in view['reports']:
+        for warning in report.get('overview_warnings', []):
+            st.warning(warning)
     if view['period'][1] >= str(datetime.now(TAIPEI).date()):
         st.warning('本次包含今天，花費與訂位仍會更新。和後台核對時，請使用相同日期、時區與更新時間。')
     df = report_frame(view['reports'])
@@ -372,6 +375,13 @@ def _render_report(view, keys, period, settings, names, account_by_key):
                     st.write(f'曝光 {impressions:,.0f} · 點擊 {clicks:,.0f}')
                     st.write(f'CTR {100*clicks/impressions:.2f}%' if impressions else 'CTR —')
                     money_metric(st, 'CPC', totals(values)['spend']/Decimal(str(clicks)) if clicks else None, p)
+    from mori.performance_model import render_activity_comparison, render_sweet_spot
+    render_activity_comparison(shown, view, selected_plans is None,
+                               {account_by_key[k]['platform'] for k in relevant_keys if k not in loaded})
+    if not incomplete:
+        render_sweet_spot(shown, view)
+    else:
+        st.info('帳號資料尚未完整，暫不建立甜蜜點觀察。')
     if grouped:
         st.divider()
         st.subheader('各專案成效')

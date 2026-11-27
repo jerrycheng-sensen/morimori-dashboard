@@ -78,7 +78,9 @@ def demo_reports(start, end):
             rows.append({"account_key": "demo_" + platform, "platform": platform, "date": str(current),
                          "campaign_id": platform + channel, "campaign_name": name, "adset_id": "set1", "adset_name": "示範組合",
                          "ad_id": "ad1", "ad_name": "示範廣告", "channel": channel, "currency": "TWD",
-                         "spend": spend, "impressions": 20000.0, "clicks": 200.0, "conversions": conv, "conversion_value": 0.0})
+                         "spend": spend, "impressions": 20000.0, "clicks": 200.0, "conversions": conv, "conversion_value": 0.0,
+                         "campaign_objective": "OUTCOME_SALES" if platform == "meta" else "",
+                         "engagements": 300.0 if platform == "meta" else None, "interactions": 200.0 if platform == "google" else None})
         current += timedelta(days=1)
     return [{"rows": [r for r in rows if r["platform"] == p], "currency": "TWD", "timezone": "Asia/Taipei", "conversion_ready": True} for p in ("meta", "google")]
 
@@ -89,7 +91,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.26.55")
+st.sidebar.caption("系統版本：2026.11.27.56")
 pending_overview_budget = st.session_state.pop('overview_budget_target', None)
 if pending_overview_budget:
     st.session_state.navigation_page = '專案預算'
@@ -203,7 +205,7 @@ if page == "數據總覽":
                             reports.append(result)
                         return reports, []
                     return fetch_accounts([account_by_key[k] for k in keys],
-                                          lambda account: {**fetch_report(account, start, end), 'account_key': account['key']})
+                                          lambda account: {**provider_for(account, creds).fetch_overview(account, start, end), 'account_key': account['key']})
                 with st.spinner('讀取廣告數據與比較期間…' if compare else '讀取廣告數據…'):
                     reports, errors = load_period(*period)
                     earlier = previous_period(period)

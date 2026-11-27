@@ -116,6 +116,49 @@ class MetaProvider:
     def fetch(self, account, start, end):
         return self._fetch(account, start, end, budget=False)
 
+    def fetch_overview(self, account, start, end):
+        warnings = []
+        try:
+            report = self._fetch(account, start, end, budget=False, overview=True)
+        except AppError as exc:
+            if any(code in str(exc) for code in ('代碼 190', '代碼 4', '代碼 17')):
+                raise
+            # Optional classification/engagement fields must not take away core KPIs.
+            report = self.fetch(account, start, end)
+            warnings.append('Meta 活動目標／互動資料未讀取成功；基本花費與訂位仍可查看。')
+        report['reach_metrics'] = []
+        for level in ('account', 'campaign'):
+            try:
+                params = {'level': level, 'fields': 'reach' + (',campaign_id' if level == 'campaign' else ''),
+                          'time_increment': 'all_days', 'time_range': json.dumps({'since': str(start), 'until': str(end)}), 'limit': 500}
+                collected, cursors = [], set()
+                while True:
+                    data = self._get('act_' + str(account['account_id']).removeprefix('act_') + '/insights', params)
+                    if not isinstance(data.get('data'), list):
+                        raise AppError('觸及資料格式不完整。')
+                    for item in data['data']:
+                        collected.append({'scope':level,'campaign_id':str(item.get('campaign_id','')),
+                                          'reach':number(item['reach']) if item.get('reach') is not None else None,
+                                          'since':str(start),'until':str(end)})
+                    if not data.get('paging', {}).get('next'):
+                        break
+                    cursor = data.get('paging', {}).get('cursors', {}).get('after')
+                    if not cursor or cursor in cursors:
+                        raise AppError('觸及分頁資料不完整。')
+                    cursors.add(cursor)
+                    params['after'] = cursor
+                if level == 'account' and len(collected) > 1:
+                    raise AppError('帳號觸及回傳重複。')
+                if len({(r['scope'],r['campaign_id']) for r in collected}) != len(collected):
+                    raise AppError('活動觸及回傳重複。')
+                report['reach_metrics'].extend(collected)
+            except AppError as exc:
+                warnings.append('Meta 整段' + ('帳號' if level == 'account' else '活動') + '觸及未完整回報；不以每日觸及相加替代。')
+                if any(code in str(exc) for code in ('代碼 190', '代碼 4', '代碼 17')):
+                    break
+        report['overview_warnings'] = warnings
+        return report
+
     def fetch_account_spend(self, account, start, end):
         start, end = check_dates(start, end)
         account_id = 'act_' + str(account['account_id']).removeprefix('act_')
@@ -147,7 +190,7 @@ class MetaProvider:
         """Read each ad's whole-period cost, rather than adding daily costs."""
         return self._fetch(account, start, end, budget=True)
 
-    def _fetch(self, account, start, end, budget):
+    def _fetch(self, account, start, end, budget, overview=False):
         start, end = check_dates(start, end)
         account_id = "act_" + str(account["account_id"]).removeprefix("act_")
         if not re.fullmatch(r"act_\d+", account_id):
@@ -159,6 +202,8 @@ class MetaProvider:
         params = {"level": "ad", "fields": "date_start,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,inline_link_clicks,actions,action_values",
                   "time_range": json.dumps({"since": start, "until": end}), "time_increment": "all_days" if budget else 1,
                   "use_unified_attribution_setting": "true", "action_report_time": "impression", "limit": 500}
+        if overview:
+            params['fields'] += ',objective,inline_post_engagement'
         if budget:
             params['fields'] = 'date_start,date_stop,campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend'
         rows, seen_cursors = [], set()
@@ -191,6 +236,9 @@ class MetaProvider:
                              "conversions": actions.get(action, 0.0) if action and not budget else None,
                              "conversion_value": values.get(action, 0.0) if action and not budget else None,
                              "available_actions": sorted(actions)})
+                if overview:
+                    rows[-1].update(campaign_objective=item.get('objective', ''),
+                                    engagements=number(item['inline_post_engagement']) if item.get('inline_post_engagement') is not None else None)
                 if budget:
                     rows[-1].update(spend_raw=str(item['spend']), date_stop=end,
                                     attribution_unit='每則廣告／整段走期')
@@ -295,6 +343,24 @@ class GoogleProvider:
                          "conversions": total, "conversion_value": value})
         return {"rows": rows, "currency": info["currencyCode"], "timezone": info.get("timeZone", "未提供"),
                 "account_name": info.get("descriptiveName", account["name"]), "conversion_ready": conversion_ready(account)}
+
+    def fetch_overview(self, account, start, end):
+        report = self.fetch(account, start, end)
+        report['overview_warnings'] = []
+        try:
+            rows = self.query(account, "SELECT campaign.id, segments.date, metrics.interactions FROM campaign WHERE "
+                              + f"segments.date BETWEEN '{start}' AND '{end}'")
+            interactions = {}
+            for row in rows:
+                key = (str(row['campaign']['id']), row['segments']['date'])
+                if key in interactions:
+                    raise AppError('主要互動資料回傳重複，暫不使用。')
+                interactions[key] = number(row.get('metrics', {}).get('interactions'))
+            for row in report['rows']:
+                row['interactions'] = interactions.get((str(row['campaign_id']),row['date']))
+        except AppError:
+            report['overview_warnings'].append('Google 主要互動資料未完整讀取；基本花費與訂位仍可查看。')
+        return report
 
     def fetch_account_spend(self, account, start, end):
         start, end = check_dates(start, end)

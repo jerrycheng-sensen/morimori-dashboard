@@ -460,3 +460,61 @@ def test_meta_malformed_batch_cannot_shift_names_between_ids():
     provider=MetaProvider({'META_ACCESS_TOKEN':'secret'},session)
     with pytest.raises(AppError,match='筆數不符'):
         provider._get('',{'ids':'101,102','fields':'id,name'})
+
+
+def test_meta_overview_classification_engagement_and_direct_period_reach():
+    item={'date_start':'2026-11-08','campaign_id':'123','ad_id':'456','objective':'OUTCOME_TRAFFIC',
+          'inline_post_engagement':'12','spend':'50','impressions':'1000','inline_link_clicks':'20',
+          'actions':[{'action_type':'booking','value':'2'}]}
+    session=Session([Response({'currency':'TWD','timezone_name':'Asia/Taipei'}),Response({'data':[item]}),
+                     Response({'data':[{'reach':'900'}]}),Response({'data':[{'campaign_id':'123','reach':'850'}]})])
+    report=MetaProvider({'META_ACCESS_TOKEN':'secret'},session).fetch_overview({**account(),'meta_action_type':'booking'},'2026-11-08','2026-11-08')
+    assert report['rows'][0]['campaign_objective']=='OUTCOME_TRAFFIC'
+    assert report['rows'][0]['engagements']==12 and report['rows'][0]['conversions']==2
+    assert [r['reach'] for r in report['reach_metrics']]==[900,850]
+    assert session.calls[2][2]['params']['level']=='account' and session.calls[2][2]['params']['time_increment']=='all_days'
+    assert not report['overview_warnings']
+
+
+def test_optional_meta_reach_failures_do_not_hide_core_kpis():
+    session=Session([Response({'currency':'TWD'}),Response({'data':[{'date_start':'2026-11-08','campaign_id':'123','spend':'50'}]}),
+                     Response({'error':{'code':100}},status=500),Response({'error':{'code':100}},status=500)])
+    report=MetaProvider({'META_ACCESS_TOKEN':'secret'},session).fetch_overview(account(),'2026-11-08','2026-11-08')
+    assert report['rows'][0]['spend']==50 and report['reach_metrics']==[]
+    assert len(report['overview_warnings'])==2
+
+
+def test_optional_google_interactions_never_change_cost_or_conversion_totals(monkeypatch):
+    provider=GoogleProvider({'GOOGLE_CLIENT_ID':'id','GOOGLE_CLIENT_SECRET':'secret','GOOGLE_REFRESH_TOKEN':'refresh'})
+    base={'rows':[{'campaign_id':'123','date':'2026-11-08','spend_raw':'50.123456','spend':50.123456,'conversions':2.5}],'currency':'TWD'}
+    monkeypatch.setattr(provider,'fetch',lambda *args:copy.deepcopy(base))
+    monkeypatch.setattr(provider,'query',lambda *args:[{'campaign':{'id':'123'},'segments':{'date':'2026-11-08'},'metrics':{'interactions':'100'}}])
+    result=provider.fetch_overview(account('google'),'2026-11-08','2026-11-08')
+    assert result['rows'][0]['interactions']==100
+    assert result['rows'][0]['spend_raw']=='50.123456' and result['rows'][0]['conversions']==2.5
+    def fail(*args): raise AppError('optional unavailable')
+    monkeypatch.setattr(provider,'query',fail)
+    result=provider.fetch_overview(account('google'),'2026-11-08','2026-11-08')
+    assert result['rows'][0]==base['rows'][0] and result['overview_warnings']
+
+
+def test_optional_meta_metric_fallback_preserves_core_and_auth_errors_do_not_retry(monkeypatch):
+    provider=MetaProvider({'META_ACCESS_TOKEN':'secret'})
+    base={'rows':[{'campaign_id':'123','spend':50,'conversions':2}],'currency':'TWD'}
+    attempts=[]
+    def fetch(*args,**kwargs):
+        attempts.append(kwargs.get('overview',False))
+        if kwargs.get('overview'): raise AppError('Meta 查詢參數或指定物件無效（HTTP 500，代碼 100）')
+        return copy.deepcopy(base)
+    monkeypatch.setattr(provider,'_fetch',fetch)
+    monkeypatch.setattr(provider,'_get',lambda *args:{'data':[]})
+    result=provider.fetch_overview(account(),'2026-11-08','2026-11-08')
+    assert attempts==[True,False] and result['rows']==base['rows'] and result['overview_warnings']
+    attempts.clear()
+    def auth(*args,**kwargs):
+        attempts.append(True)
+        raise AppError('Meta 權杖無效（代碼 190）')
+    monkeypatch.setattr(provider,'_fetch',auth)
+    with pytest.raises(AppError,match='190'):
+        provider.fetch_overview(account(),'2026-11-08','2026-11-08')
+    assert len(attempts)==1
