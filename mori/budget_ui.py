@@ -191,21 +191,10 @@ BUDGET_STYLES = """<style>
 
 
 def render_budget_heading():
-    st.markdown(BUDGET_STYLES, unsafe_allow_html=True)
-    icon = ('<svg width="52" height="52" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">'
-            '<defs><linearGradient id="ledger" x1="10" y1="6" x2="46" y2="50" gradientUnits="userSpaceOnUse">'
-            '<stop stop-color="#f0f2d5"/><stop offset="1" stop-color="#b79a65"/></linearGradient></defs>'
-            '<path d="M14 7h27a5 5 0 0 1 5 5v32a5 5 0 0 1-5 5H14a5 5 0 0 1-5-5V12a5 5 0 0 1 5-5Z" fill="#d8e8bc" fill-opacity=".07" stroke="url(#ledger)" stroke-width="2"/>'
-            '<path d="M17 7v42M7 17h5M7 29h5M7 41h5M23 38h16" stroke="url(#ledger)" stroke-width="2" stroke-linecap="round"/>'
-            '<path d="M32 17a9 9 0 1 0 9 9h-9v-9Z" stroke="url(#ledger)" stroke-width="2" stroke-linejoin="round"/>'
-            '<path d="M36 13v9h9a9 9 0 0 0-9-9Z" fill="#d1bc94" fill-opacity=".75"/>'
-            '<path d="M24 44h3M31 44h8" stroke="#b79a65" stroke-width="1.7" stroke-linecap="round"/></svg>')
-    src = base64.b64encode(icon.encode()).decode()
-    st.markdown('<header class="mori-budget-hero"><div class="mori-budget-hero-inner">'
-                f'<div class="mori-budget-symbol" aria-hidden="true"><img src="data:image/svg+xml;base64,{src}" width="52" height="52" alt=""></div><div>'
-                '<div class="hero-category">廣告智慧儀表板・專案管理</div>'
-                '<h1>專案預算</h1><p>掌握每個專案的預算、花費與結餘</p>'
-                '</div></div></header>', unsafe_allow_html=True)
+    from mori.design_system import stylesheet, page_header
+    st.html(BUDGET_STYLES+stylesheet())
+    st.markdown(page_header('專案預算','預算、花費與發票，在同一個地方看清楚。','MORI / PROJECT BUDGET',icon='budget'),unsafe_allow_html=True)
+
 
 
 def status_badge(scope, state):
@@ -287,7 +276,8 @@ def management_guide():
 
 
 def render_budgets(settings, fetch, persist, documents=None, account_fetch=None):
-    st.markdown(BUDGET_STYLES, unsafe_allow_html=True)
+    from mori.design_system import stylesheet
+    st.html(BUDGET_STYLES+stylesheet())
     with st.container(key='budget_workspace'):
         today = datetime.now(TAIPEI).date()
         groups = {g['id']: g for g in settings.get('project_groups', [])}
@@ -521,7 +511,7 @@ def render_project_rail(settings, today):
 @st.fragment
 def render_budget_overview(settings, fetch, persist=None, account_fetch=None):
     with st.container(key='budget_overview_layout'):
-        rail, content = st.columns([1, 3.6], gap='large')
+        rail, content = st.columns([1.15, 3], gap='medium')
         with rail:
             entries, year = render_project_rail(settings, datetime.now(TAIPEI).date())
         with content:

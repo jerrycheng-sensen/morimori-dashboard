@@ -37,7 +37,8 @@ from mori.field_guidance import (META_ACCOUNT_GUIDANCE, GOOGLE_ACCOUNT_GUIDANCE,
 
 ASSETS = Path(__file__).parent / "assets"
 st.set_page_config(page_title="廣告智慧儀表板", page_icon=(ASSETS / "mori-bull-icon.svg").read_text(), layout="wide")
-st.markdown(DASHBOARD_CSS, unsafe_allow_html=True)
+from mori.design_system import stylesheet
+st.html(stylesheet())
 
 
 def secret(key, default=""):
@@ -91,7 +92,7 @@ if demo:
 
 logo_svg = base64.b64encode((ASSETS / "mori-logo-white.svg").read_bytes()).decode()
 st.sidebar.markdown(f'<div class="mori-brand"><img alt="森森燒肉正式 Logo" src="data:image/svg+xml;base64,{logo_svg}"><span>廣告智慧儀表板</span></div>', unsafe_allow_html=True)
-st.sidebar.caption("系統版本：2026.11.27.57")
+
 pending_overview_budget = st.session_state.pop('overview_budget_target', None)
 if pending_overview_budget:
     st.session_state.navigation_page = '專案預算'
@@ -109,15 +110,18 @@ if st.session_state.get('last_navigation_page') != page:
         st.session_state.budget_refresh_requested = True
     st.session_state.last_navigation_page = page
 st.sidebar.caption("台灣時間 " + datetime.now(TAIPEI).strftime("%Y/%m/%d %H:%M"))
-with st.sidebar.expander("品牌外觀"):
+with st.sidebar.expander("系統資訊與外觀"):
+    st.caption("系統版本：2026.11.27.58")
     logo = st.file_uploader("品牌 Logo（此次瀏覽使用）", type=["png", "jpg", "jpeg"])
     if logo:
         st.image(logo, width=180)
 if page == '專案預算':
     render_budget_heading()
 elif page != '數據總覽':
-    st.title(page)
-    st.caption('廣告數據、預算與 LINE 異常提醒集中管理')
+    from mori.design_system import page_header
+    descriptions={'異常規則':('把需要注意的廣告，交給規則追蹤。','rules'),'通知排程':('在對的時間，收到需要處理的提醒。','clock'),'執行紀錄':('每一次檢查與通知，都有跡可循。','clock'),'帳號與串接':('管理廣告帳號，確認資料連線狀態。','account'),'API 與權杖設定':('集中管理連線憑證與平台授權。','key')}
+    description,icon=descriptions[page]
+    st.markdown(page_header(page,description,icon=icon),unsafe_allow_html=True)
 if st.session_state.get("save_notice"):
     st.success(st.session_state.pop("save_notice"))
 
@@ -190,7 +194,8 @@ if page == "數據總覽":
     if not settings["accounts"]:
         st.info("先到「帳號與串接」新增 Meta 或 Google Ads 帳號。")
     else:
-        mode=st.radio('數據總覽模式',['廣告成效','檔期投資模型'],horizontal=True,key='overview_mode')
+        with st.container(key='overview_mode_bar'):
+            mode=st.radio('數據總覽模式',['廣告成效','檔期投資模型'],horizontal=True,key='overview_mode',label_visibility='collapsed')
         if mode=='檔期投資模型':
             from mori.festival_ui import render_festival_model
             model_store=store

@@ -17,64 +17,9 @@ from mori.money_display import money_metric, money_html, money_text, money_table
 
 PLATFORMS = {'meta': 'Meta', 'google': 'Google Ads'}
 
-CSS = '''<style>
-.mori-money-fraction{font-size:.58em!important;font-weight:500!important;opacity:.6;letter-spacing:0;white-space:nowrap;}
-.mori-money-metric{padding:20px 18px;border:1px solid #dedbd4;border-radius:14px;background:#fffefa;min-width:0;}
-.mori-money-label{font-size:15px;color:#5c6b5f;margin-bottom:10px;}
-.mori-money-value{font-size:clamp(24px,2.15vw,32px);font-weight:750;line-height:1.35;color:#17421E;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
-.mori-money-note{font-size:14px!important;line-height:1.8;color:#718075;margin:8px 0;}
-:root{--mori-brand:#17421E;--mori-ink:#142b1c;--mori-accent:#b8e572;}
-html,body,[data-testid="stApp"]{font-family:"Microsoft JhengHei","微軟正黑體",sans-serif!important;}
-[data-testid="stApp"] *:not([data-testid="stIconMaterial"]):not([class*="material-symbols"]){font-family:"Microsoft JhengHei","微軟正黑體",sans-serif!important;}
-[data-testid="stIconMaterial"],[class*="material-symbols"]{font-family:"Material Symbols Rounded"!important;}
-body [role="tooltip"],body [role="listbox"],body [role="option"],body [data-baseweb="popover"],body [data-baseweb="popover"] *{font-family:"Microsoft JhengHei","微軟正黑體",sans-serif!important;}
-[data-testid="stAppViewContainer"]{background:radial-gradient(ellipse at 95% 2%,#dcebdc80,transparent 45%),linear-gradient(#17421e03 1px,transparent 1px),linear-gradient(90deg,#17421e03 1px,transparent 1px),#f4f7f4;background-size:auto,32px 32px,32px 32px,auto;}
-[data-testid="stHeader"]{background:#f4f7f4ef;border-bottom:1px solid #17421e10;}
-[data-testid="stMainBlockContainer"]{max-width:1500px;padding-top:4.6rem!important;padding-bottom:3rem;}
-h1{font-size:2.05rem!important;letter-spacing:-.035em;font-weight:750!important;color:#142b1c;}
-h2{font-size:1.25rem!important;letter-spacing:-.025em;}
-h3{font-size:1.05rem!important;}
-[data-testid="stSidebar"]{background:radial-gradient(ellipse at 0 0,#17421E 0,transparent 70%),#0b1d12;border-right:1px solid #accf8c30;}
-[data-testid="stSidebar"] [data-testid="stSidebarContent"]{padding-top:1rem;}
-.mori-brand{padding:14px 4px 22px;margin-bottom:8px;border-bottom:1px solid #ffffff16;}
-.mori-brand img{width:214px;max-width:100%;height:auto;display:block;}
-.mori-brand span{display:block;color:#bdd0be;font-size:12px;letter-spacing:.22em;margin-top:16px;}
-[data-testid="stSidebar"] [role="radiogroup"]{gap:7px;}
-[data-testid="stSidebar"] [role="radiogroup"] label{padding:10px 12px;border:1px solid transparent;border-radius:9px;width:100%;color:#c7d5c9;transition:background 100ms;}
-[data-testid="stSidebar"] [role="radiogroup"] label:hover{background:#ffffff0b;}
-[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked){background:linear-gradient(100deg,#5b8b443d,#b8e5720b);color:#e6f8cf;border:1px solid #b8e57245;box-shadow:inset 3px 0 #b8e572;}
-[data-testid="stSidebar"] [data-testid="stCaptionContainer"]{color:#94aa98;}
-[data-testid="stSidebar"] button{background:#ffffff08;color:#d3e3d3;border-color:#adcba42b;}
-[data-testid="stSidebar"] [data-testid="stExpander"]{background:transparent;border-color:#adcba42b;}
-[data-testid="stMain"] [data-testid="stVerticalBlockBorderWrapper"]>div{border-color:#dae5db!important;border-radius:14px!important;background:#ffffffee;box-shadow:0 4px 24px #17351c04;}
-[data-testid="stMetric"]{position:relative;overflow:hidden;background:linear-gradient(140deg,#fff,#f7faf6);border:1px solid #d9e6d9;border-radius:13px;padding:20px 22px;box-shadow:0 5px 20px #17421e07;}
-[data-testid="stMetric"]:before{content:"";position:absolute;top:0;left:22px;width:38px;height:3px;background:#7ca65f;}
-[data-testid="stMetricLabel"]{color:#617563;font-size:.85rem;}
-[data-testid="stMetricValue"]{color:#17421E;font-weight:750;letter-spacing:-.045em;}
-[data-testid="stColumn"]:first-child [data-testid="stMetric"]{background:radial-gradient(ellipse at 100% 0,#547941,#17421E 75%);border-color:#17421E;box-shadow:0 7px 22px #17421e23;}
-[data-testid="stColumn"]:first-child [data-testid="stMetric"]:before{background:#b8e572;}
-[data-testid="stColumn"]:first-child [data-testid="stMetricLabel"]{color:#c5d9bc;}
-[data-testid="stColumn"]:first-child [data-testid="stMetricValue"]{color:#f6fbed;}
-[data-testid="stButton"] button,[data-testid="stDownloadButton"] button{border-radius:9px;transition:background-color 80ms,border-color 80ms,box-shadow 80ms;}
-[data-testid="stMain"] [data-testid="stButton"] button[kind="primary"]{background:#17421E;border-color:#17421E;box-shadow:0 4px 12px #17421e22;}
-[data-testid="stButton"] button:active{transform:translateY(1px);}
-[data-testid="stDataFrame"]{border:1px solid #dce7dc;border-radius:11px;overflow:hidden;}
-.mori-banner{position:relative;isolation:isolate;overflow:hidden;display:flex;justify-content:space-between;align-items:center;gap:20px;border:1px solid #69845770;background:radial-gradient(ellipse at 85% -60%,#95bf5f6b,transparent 60%),linear-gradient(110deg,#102c17,#17421E 60%,#213d25);border-radius:17px;padding:29px 28px;margin:10px 0 20px;box-shadow:0 12px 38px #17421e16;}
-.mori-banner:before{content:"";z-index:-1;position:absolute;inset:0;background:linear-gradient(#d3edaf0b 1px,transparent 1px),linear-gradient(90deg,#d3edaf0b 1px,transparent 1px);background-size:26px 26px;mask-image:linear-gradient(90deg,transparent,#000);}
-.mori-banner:after{content:"";z-index:-1;position:absolute;width:210px;height:210px;right:50px;top:-100px;border:1px solid #c9f39e30;border-radius:50%;box-shadow:0 0 0 28px #c9f39e08,0 0 0 58px #c9f39e05;}
-.mori-kicker{color:#c3e2a6;font-size:11px;letter-spacing:.18em;margin-bottom:10px;}
-.mori-banner strong{display:block;font-size:24px;letter-spacing:-.03em;color:#f2f8ec;line-height:1.45;}
-.mori-banner small{display:block;color:#bbcfb5;line-height:1.8;margin-top:8px;font-size:13px;}
-.mori-pill{white-space:nowrap;border:1px solid #c2e59d55;border-radius:20px;padding:7px 12px;color:#d6efbd;background:#b8e5720f;font-size:12px;}
-.mori-pill:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#b8e572;box-shadow:0 0 8px #b8e57270;margin-right:8px;}
-.mori-empty{position:relative;overflow:hidden;text-align:center;padding:46px 20px;border:1px solid #d3e3d1;border-radius:15px;background:radial-gradient(ellipse at 50% 0,#e2efdc90,transparent 65%),#ffffffd9;}
-.mori-empty:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(#17421e04 1px,transparent 1px),linear-gradient(90deg,#17421e04 1px,transparent 1px);background-size:24px 24px;mask-image:linear-gradient(#000,transparent);}
-.mori-empty .symbol{position:relative;margin:0 auto 17px;width:52px;height:52px;border:1px solid #7a9c6d45;background:linear-gradient(145deg,#17421E,#2f5b2c);color:#d3edb4;border-radius:15px;box-shadow:0 8px 24px #17421e25;display:grid;place-items:center;font-size:27px;}
-.mori-empty strong{position:relative;display:block;font-size:18px;color:#17421E;margin-bottom:8px;}
-.mori-empty p{position:relative;color:#73846f;font-size:13px;}
-@media(max-width:700px){.mori-banner{align-items:flex-start;flex-direction:column;padding:23px;}.mori-banner strong{font-size:21px;}[data-testid="stMainBlockContainer"]{padding-top:4.3rem!important;}}
-@media(prefers-reduced-motion:reduce){*{transition:none!important;}}
-</style>''' 
+from mori.design_system import stylesheet, page_header
+
+CSS = stylesheet()
 
 
 def filter_rows(df, project=None, query='', channels=None):
@@ -149,11 +94,10 @@ def previous_period(period):
 
 
 def overview_controls(names):
-    st.markdown(OVERVIEW_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="overview-hero"><div class="overview-eyebrow">MORI · AD PERFORMANCE</div>'
-                '<h1>廣告成效，一眼掌握。</h1><p>先看投入與訂位，再找出值得調整的地方。</p></div>', unsafe_allow_html=True)
+    st.html(stylesheet())
+    st.markdown(page_header('廣告成效總覽','掌握投入與訂位，找出值得調整的地方。','MORI / PERFORMANCE'), unsafe_allow_html=True)
     with st.container(key='overview_query', border=True):
-        a, b, c = st.columns([1.4, .9, .65], vertical_alignment='bottom')
+        a, b, c, d = st.columns([1.4, .8, .6, .55], vertical_alignment='bottom')
         keys = a.multiselect('廣告帳號', list(names), default=list(names), format_func=names.get, key='overview_accounts')
         preset = b.selectbox('查詢期間', ['近 7 天', '昨天', '近 30 天', '近 90 天', '本月', '自訂日期'], key='overview_period_preset')
         compare = c.checkbox('與前期比較', value=True, help='使用相同天數；例如本次 7 天，就與前 7 天比較。', key='overview_compare')
@@ -164,7 +108,7 @@ def overview_controls(names):
         else:
             start = yesterday if preset == '昨天' else today.replace(day=1) if preset == '本月' else today-timedelta(days=90 if preset == '近 90 天' else 30 if preset == '近 30 天' else 7)
             period = (start, max(start, yesterday))
-        read = st.button('讀取數據', type='primary', icon=':material/refresh:', key='overview_read')
+        read = d.button('讀取數據', type='primary', icon=':material/refresh:', key='overview_read',width='stretch')
         if len(period) == 2:
             st.caption(f'本次查詢 {period[0]:%Y/%m/%d} — {period[1]:%Y/%m/%d} · 依各帳號時區。按「讀取數據」更新，下方切換檢視沿用本次資料。')
     return keys, period, compare, read
@@ -256,7 +200,7 @@ def platform_logo(platform):
 
 
 def render_report(view, keys, period, settings, names, account_by_key):
-    st.markdown(OVERVIEW_CSS, unsafe_allow_html=True)
+    st.html(stylesheet())
     with st.container(key='overview_workspace'):
         _render_report(view, keys, period, settings, names, account_by_key)
 
@@ -294,11 +238,11 @@ def _render_report(view, keys, period, settings, names, account_by_key):
         return groups[key]['name'] if key in groups else grouped[key][0]['name']
     with st.container(border=True, key='overview_filters'):
         from mori.project_types import PROJECT_TYPES, project_type
-        category = st.selectbox('專案分類', ['全部', *PROJECT_TYPES, '待分類'], key='overview_category')
+        ca, a, b = st.columns([.8, 1.1, 1.25], vertical_alignment='bottom')
+        category = ca.selectbox('專案分類', ['全部', *PROJECT_TYPES, '待分類'], key='overview_category')
         visible_groups = {k:v for k,v in grouped.items() if category=='全部' or project_type(groups.get(k, v[0]))==category}
         if st.session_state.get('overview_project') not in ['all', *visible_groups]:
             st.session_state.overview_project='all'
-        a, b = st.columns([1.25, 1])
         group_id = a.selectbox('查看專案', ['all'] + list(visible_groups), format_func=lambda k: '全部帳號資料' if k == 'all' else group_name(k), key='overview_project')
         platform = b.radio('查看平台', ['all', 'meta', 'google'], format_func=lambda k: '雙平台' if k == 'all' else PLATFORMS[k], horizontal=True, key='overview_platform')
     selected_plans = grouped.get(group_id)
@@ -443,40 +387,4 @@ def _render_report(view, keys, period, settings, names, account_by_key):
             st.caption(f'帳號時區：{report.get("timezone")}｜幣別：{report["currency"]}')
 
 
-OVERVIEW_CSS = """<style>
-[data-testid="stAppViewContainer"]:has(.overview-hero){background:radial-gradient(ellipse at 100% 0,#ece5d780,transparent 55%),#f6f4ef;background-size:auto;}
-.overview-hero{padding:30px 0 28px;border-bottom:1px solid #e6dfd2;margin-bottom:24px;}
-.overview-eyebrow{font-size:12px;letter-spacing:.2em;color:#967d51;font-weight:700;margin-bottom:12px;}
-.overview-hero h1{font-size:clamp(28px,3vw,42px)!important;color:#17421E;line-height:1.3;}
-.overview-hero p{font-size:17px;color:#68756b;margin-top:12px;}
-.st-key-overview_query{background:#fffefa;border-color:#e3ddd1!important;border-radius:18px!important;padding:22px!important;box-shadow:0 8px 28px #17351c08;}
-.st-key-overview_workspace{color:#203b28;}
-.st-key-overview_workspace p,.st-key-overview_workspace label p,.st-key-overview_query p{font-size:16px!important;line-height:1.75;}
-.st-key-overview_workspace hr{border-color:#e3ddd1;margin:32px 0;}
-.st-key-overview_workspace h2{font-size:24px!important;font-weight:750!important;}
-.st-key-overview_workspace h3{font-size:22px!important;}
-.st-key-overview_workspace [data-testid="stVerticalBlock"]{gap:18px;}
-.st-key-overview_filters{padding:20px!important;background:#fffefa;border-color:#e3ddd1!important;border-radius:16px;}
-.st-key-overview_workspace [data-testid="stExpander"]{border-color:#e3ddd1;border-radius:12px;background:#fffefa;}
-.st-key-overview_workspace [data-testid="stDataFrame"]{border-color:#e3ddd1;}
-.st-key-overview_workspace [data-testid="stVerticalBlockBorderWrapper"]>div{background:#fffefa!important;border-color:#e3ddd1!important;}
-.overview-status{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;font-size:15px;color:#69786d;padding:20px 0;}
-.overview-status strong{color:#17421E;font-weight:650;}
-.overview-kpi{padding:28px 26px;min-height:190px;background:#fffefa;border:1px solid #dfd8ca;border-radius:20px;box-shadow:0 12px 34px #1d38230a;}
-.overview-kpi-label{font-size:18px;font-weight:600;color:#5d6d60;margin-bottom:20px;}
-.overview-kpi-value{font-size:clamp(32px,3.3vw,50px);font-weight:750;color:#17421E;line-height:1.3;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
-.overview-delta{font-size:14px;margin-top:20px;color:#758074;line-height:1.7;}
-.overview-delta.good{color:#216d47;}.overview-delta.attention{color:#986720;}
-.overview-fraction{font-size:.58em;opacity:.6;}
-.overview-platform-title{display:flex;align-items:center;gap:13px;border-bottom:1px solid #e6dfd2;padding:6px 0 18px;margin-bottom:12px;}
-.overview-platform-title img{width:34px;height:30px;object-fit:contain;}.overview-platform-title h3{padding:0!important;margin:0;}
-.overview-inline{padding:18px 0;}.overview-inline span{display:block;font-size:15px;color:#6b796e;}.overview-inline strong{display:block;font-size:29px;color:#17421E;margin-top:10px;}
-.st-key-overview_workspace .mori-money-table{overflow-x:auto;border:1px solid #e3ddd1;border-radius:16px;}
-.st-key-overview_workspace .mori-money-table table{width:100%;border-collapse:collapse;background:#fffefa;font-size:16px;}
-.st-key-overview_workspace .mori-money-table th{background:#f2eee5;color:#17421E;font-weight:650;text-align:left;padding:18px;white-space:nowrap;}
-.st-key-overview_workspace .mori-money-table td{padding:20px 18px;border-top:1px solid #e9e4da;line-height:1.7;}
-.st-key-overview_workspace .mori-money-table tbody tr:hover{background:#f8f5ed;}
-.overview-start{padding:45px 30px;background:#fffefa;border:1px solid #e3ddd1;border-radius:20px;margin-top:28px;}.overview-start span{color:#9d8151;font-size:14px;}.overview-start h2{font-size:27px!important;color:#17421E;margin:12px 0;}.overview-start p{color:#68756b;}
-@media(min-width:1100px){.st-key-overview_query{position:sticky;top:3.7rem;z-index:50;}}
-@media(max-width:760px){.overview-kpi{min-height:150px;padding:24px;}.overview-status{font-size:14px;}.st-key-overview_query{padding:16px!important;}.overview-inline strong{font-size:25px;}}
-</style>"""
+OVERVIEW_CSS = CSS

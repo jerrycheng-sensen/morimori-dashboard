@@ -1,6 +1,6 @@
 [theme]
 primaryColor = "#17421E"
-backgroundColor = "#f4f7f4"
+backgroundColor = "#f5f6f3"
 secondaryBackgroundColor = "#ffffff"
 textColor = "#173426"
 font = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
@@ -17,7 +17,7 @@ showErrorDetails = false
 font = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
 headingFont = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
 codeFont = "'Microsoft JhengHei', '微軟正黑體', sans-serif"
-primaryColor = "#B8E572"
-backgroundColor = "#0B1D12"
+primaryColor = "#BCA171"
+backgroundColor = "#10291D"
 secondaryBackgroundColor = "#17421E"
 textColor = "#DCE8D7"
