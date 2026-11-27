@@ -130,6 +130,7 @@ class MetaProvider:
             row.update({key: current[key] for key in fields if key in current})
             if not current:
                 row.update(names_verified=False, verified_name_fields=[], name_lookup_issue='未取得整段核對資料。')
+        daily['event_rows']=[{'campaign_id':str(r['campaign_id']),'unit_id':str(r['ad_id']),'date':r['date'],'event_id':eid,'value':v} for r in daily['rows'] for eid,v in r.get('actions_raw',{}).items()]
         daily['whole_rows'] = whole['rows']
         daily['attribution_detail'] = True
         daily['model_basis'] = 'Meta 整段花費核對＋逐日指定訂位事件'
@@ -256,6 +257,7 @@ class MetaProvider:
                              "conversion_value": values.get(action, 0.0) if action and not budget else None,
                              "available_actions": sorted(actions)})
                 if not budget:
+                    rows[-1]['actions_raw'] = {x['action_type']:str(x.get('value','0')) for x in item.get('actions',[])}
                     rows[-1]['spend_raw'] = item.get('spend')
                     rows[-1]['conversion_raw'] = next((x.get('value') for x in item.get('actions', []) if x.get('action_type') == action), '0') if action else None
                 if overview:
@@ -378,6 +380,7 @@ class GoogleProvider:
         selected = account.get('google_conversion_mode','selected') == 'selected'
         allowed = set(map(str,account.get('google_action_ids',[])))
         ids_seen = set()
+        all_seen=set();event_rows=[]
         values = {}
         for resource, unit, response_key in [('ad_group_ad','ad_group_ad.ad.id','adGroupAd'),
                                                ('asset_group','asset_group.id','assetGroup')]:
@@ -390,10 +393,15 @@ class GoogleProvider:
             sql += " AND campaign.advertising_channel_type " + ("= 'PERFORMANCE_MAX'" if is_asset else "!= 'PERFORMANCE_MAX'")
             for item in self.query(account,sql):
                 action = item.get('segments',{}).get('conversionAction','').split('/')[-1] if selected else 'primary'
-                if selected and action not in allowed:
-                    continue
                 uid = str(item[response_key]['id'] if is_asset else item[response_key]['ad']['id'])
                 key = (str(item['campaign']['id']),uid,item['segments']['date'],is_asset)
+                raw_event=Decimal(str(item.get('metrics',{}).get('allConversions' if selected else 'conversions',0)))
+                if not raw_event.is_finite() or raw_event<0: raise AppError('歷史訂位事件數值不正確。')
+                if (*key,action) in all_seen: raise AppError('Google 歷史事件明細重複。')
+                all_seen.add((*key,action))
+                event_rows.append({'campaign_id':key[0],'unit_id':uid,'date':key[2],'event_id':action,'value':str(raw_event)})
+                if selected and action not in allowed:
+                    continue
                 if (*key,action) in ids_seen:
                     raise AppError('Google 模型訂位明細重複，已停止加總。')
                 ids_seen.add((*key,action))
@@ -417,6 +425,13 @@ class GoogleProvider:
         for row in report['campaign_rows']:
             if row.get('conversions') is None or abs(detailed.get((str(row['campaign_id']),row['date']),Decimal(0))-Decimal(str(row['conversions']))) > Decimal('.000001'):
                 raise AppError('Google 活動與廣告明細的訂位尚未同步，模型保留上次成功結果，稍後重新核對。')
+        report['event_rows']=event_rows
+        try:
+            metadata=self.query(account,'SELECT conversion_action.id, conversion_action.name, conversion_action.status FROM conversion_action')
+            report['event_catalog']=[{'id':str(r['conversionAction']['id']),'name':r['conversionAction'].get('name','')} for r in metadata]
+            report['events_audited']=True
+        except Exception:
+            report['event_catalog']=[];report['events_audited']=False
         report['model_basis'] = 'Google 同一廣告／素材群組逐日花費與指定訂位事件'
         return report
 

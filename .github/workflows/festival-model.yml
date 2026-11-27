@@ -36,5 +36,5 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-runner.txt
-      - name: 更新私人模型（公開 log 僅顯示執行狀態）
+      - name: 更新 Meta 檔期模型（公開 log 僅顯示執行狀態）
         run: python -m mori.festival_model

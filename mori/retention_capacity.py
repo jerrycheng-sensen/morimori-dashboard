@@ -59,7 +59,10 @@ def source_catalog(provider,account):
         return [{'id':str(r['id']),'name':r.get('name',''),'campaign_name':r.get('campaign',{}).get('name',''),
                  'has_custom_audience':bool(r.get('targeting',{}).get('custom_audiences'))} for r in rows]
     rows=provider.query(account,"SELECT campaign.id, campaign.name FROM campaign WHERE campaign.advertising_channel_type = 'SEARCH'")
-    return [{'id':str(r['campaign']['id']),'name':r['campaign'].get('name','')} for r in rows]
+    keywords=provider.query(account,"SELECT campaign.id, ad_group_criterion.keyword.text FROM ad_group_criterion WHERE campaign.advertising_channel_type = 'SEARCH' AND ad_group_criterion.type = 'KEYWORD' AND ad_group_criterion.negative = FALSE AND ad_group_criterion.status != 'REMOVED'")
+    words={}
+    for r in keywords: words.setdefault(str(r['campaign']['id']),set()).add(r['adGroupCriterion']['keyword']['text'])
+    return [{'id':str(r['campaign']['id']),'name':r['campaign'].get('name',''),'brand_verified':bool(words.get(str(r['campaign']['id']))) and all(any(t in w.casefold() for t in ('森森','mori')) for w in words[str(r['campaign']['id'])])} for r in rows]
 
 
 def meta_source(provider,account,selected,start,end):
@@ -78,7 +81,7 @@ def meta_source(provider,account,selected,start,end):
             if not subtype or subtype=='LOOKALIKE': raise AppError('自訂受眾類型未核對或包含類似受眾，暫不視為舊客母體。')
         specs.append(json.dumps(target,sort_keys=True))
     if len(set(specs))!=1:
-        raise AppError('多個 Meta 來源的地區或受眾不同，無法直接去重相加；請選相同投放範圍的廣告組合。')
+        raise AppError('多個 Meta 來源的地區或受眾不同，無法直接去重相加；系統保留已辨識來源，暫不以重複母體加總。')
     estimate=provider._get(selected[0]+'/delivery_estimate',{'fields':'estimate_ready,estimate_mau_lower_bound,estimate_mau_upper_bound'})
     data=estimate.get('data',[])
     if len(data)!=1 or data[0].get('estimate_ready') is not True:
@@ -140,7 +143,7 @@ def google_source(provider,account,selected,start,end):
         if c.get('type')=='LANGUAGE':
             lang=c['language']['languageConstant'];languages.add(lang);bycampaign[str(row['campaign']['id'])]['lang'].add(lang)
     if len({(tuple(sorted(v['geo'])),tuple(sorted(v['lang']))) for v in bycampaign.values()})!=1:
-        raise AppError('品牌搜尋活動的地區／語言不同，暫不混合估計；請選相同範圍來源。')
+        raise AppError('品牌搜尋活動的地區／語言不同，暫不混合估計；自動來源地區不同，目前暫不以跨區混合數字代算。')
     if not geos or len(geos)>10 or len(languages)>1: raise AppError('請使用可核對的地區範圍與單一語言品牌搜尋來源。')
     body={'keywords':words,'geoTargetConstants':sorted(geos),'keywordPlanNetwork':'GOOGLE_SEARCH'}
     if languages: body['language']=next(iter(languages))
@@ -164,8 +167,8 @@ def google_source(provider,account,selected,start,end):
             'basis':'去重品牌字近十二月平均搜尋量 × 推估天數 ÷ 30.4375 × 歷史 CTR × CPC；假設可參與全部相關搜尋，不等同已確認舊客。'}
 
 
-def collect_capacity_sources(settings,factory,now):
-    scopes=validate_config(settings);accounts={a['key']:a for a in settings['accounts']};out={}
+def collect_capacity_sources(settings,factory,now,scopes=None):
+    scopes=validate_config(settings) if scopes is None else scopes;accounts={a['key']:a for a in settings['accounts']};out={}
     from mori.project_types import festival_groups
     groups={g['id']:g for g in festival_groups(settings)}
     for key,scope in scopes.items():
@@ -177,7 +180,7 @@ def collect_capacity_sources(settings,factory,now):
         for platform in ('meta','google'):
             source=scope.get(platform)
             if not source:
-                value_by_platform[platform]={'status':'needs_source','reason':'尚未確認'+('再行銷廣告組合' if platform=='meta' else '品牌搜尋活動')+'來源。'}
+                value_by_platform[platform]={'status':'needs_source','reason':'自動辨識尚未找到'+('再行銷廣告組合' if platform=='meta' else '品牌搜尋活動')+'來源。'}
                 continue
             try:
                 account=accounts[source['account_key']];provider=factory(account)
@@ -195,7 +198,7 @@ def capacity_projection(sources,days):
     for platform in ('meta','google'):
         source=sources.get(platform,{})
         if source.get('status')!='ready':
-            results[platform]={'status':source.get('status','needs_source'),'reason':source.get('reason','尚未確認舊客廣告來源。')};continue
+            results[platform]={'status':source.get('status','needs_source'),'reason':source.get('reason','自動辨識尚未找到舊客廣告來源。')};continue
         currencies.add(source['currency'])
         if platform=='meta':
             unit=value(source['frequency_per_day'])*days*value(source['cpm'])/1000

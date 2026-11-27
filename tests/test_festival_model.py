@@ -32,6 +32,7 @@ class Provider:
         if self.fail: raise AppError('讀取失敗，不當成零。')
         result=report()
         for row in result['rows']: row['conversion_raw']=self.bookings
+        result.update(events_audited=True,event_catalog=[{'id':'7','name':'訂位'}])
         return result
 
 
@@ -136,6 +137,7 @@ def google_fixture():
     queries=[]
     def query(account,sql):
         queries.append(sql)
+        if 'FROM conversion_action' in sql: return [{'conversionAction':{'id':'7','name':'指定訂位'}},{'conversionAction':{'id':'8','name':'其他事件'}}]
         assert 'metrics.cost_micros' not in sql and 'segments.conversion_action' in sql
         asset='FROM asset_group ' in sql
         return [{'campaign':{'id':'2' if asset else '1'},
@@ -150,7 +152,7 @@ def test_google_model_selected_booking_join_to_search_and_pmax():
     provider,data,queries=google_fixture()
     r=provider.fetch_model(settings()['accounts'][0],date(2026,11,1),date(2026,11,1))
     assert [r['conversion_raw'] for r in r['rows']]==['1.25','2.5']
-    assert len(queries)==2 and all('999' not in str(r['conversions']) for r in r['rows'])
+    assert len(queries)==3 and all('999' not in str(r['conversions']) for r in r['rows'])
     assert 'conversions' not in data['rows'][0]  # no cached budget mutation
 
 

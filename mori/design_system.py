@@ -30,8 +30,8 @@ def section_heading(title, description='', index=''):
     return '<div class="mori-section-heading"><div><h2>'+escape(title)+'</h2>'+(('<p>'+escape(description)+'</p>') if description else '')+'</div><span>'+escape(index)+'</span></div>'
 
 
-def insight_card(label, value, note, *, focus=False, empty='尚未辨識', tag='模型估計'):
-    number=money_html(value) if value is not None else '<span class="mori-insight-empty">'+escape(empty)+'</span>'
+def insight_card(label, value, note, *, focus=False, empty='尚未辨識', tag='模型估計',platform='combined'):
+    number=money_html(value,platform) if value is not None else '<span class="mori-insight-empty">'+escape(empty)+'</span>'
     return ('<article class="mori-insight'+(' focus' if focus else '')+'" data-money-label="'+escape(label,quote=True)+'"><div class="mori-insight-head">'+escape(label)+
             '<span class="mori-insight-tag">'+escape(tag)+'</span></div><div class="mori-insight-value">'+number+'</div><p class="mori-insight-note">'+escape(note)+'</p></article>')
 
@@ -39,8 +39,10 @@ def insight_card(label, value, note, *, focus=False, empty='尚未辨識', tag='
 def history_card(project, index):
     from decimal import Decimal
     spend=Decimal(project['spend']);bookings=Decimal(project['bookings'])
-    count=f'{bookings:,.2f}'.rstrip('0').rstrip('.')
-    stats=[('實際花費',money_html(spend)),('平台回報訂位',escape(count)),('整檔 CPA',money_html(spend/bookings if bookings else None))]
+    valid=project.get('bookings_valid',True)
+    count=f'{bookings:,.2f}'.rstrip('0').rstrip('.') if valid else '事件待核對'
+    platform=project.get('analysis_platform','combined')
+    stats=[('實際花費',money_html(spend,platform)),('平台回報訂位',escape(count)),('整檔 CPA',money_html(spend/bookings if valid and bookings else None,platform))]
     return ('<article class="mori-history-card"><div class="mori-history-top"><div><h3>'+escape(project['name'])+'</h3><p>'+escape(project['ad_start']+' — '+project['ad_end'])+
             '</p></div><span class="mori-history-index">'+escape(index)+'</span></div><div class="mori-history-stats">'+
             ''.join('<div><span>'+escape(label)+'</span><strong>'+value+'</strong></div>' for label,value in stats)+'</div></article>')

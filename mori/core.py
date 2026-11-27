@@ -123,9 +123,11 @@ def validate_settings(data):
         raise AppError("至少選擇一個有效的星期。")
     model=data.get('festival_model',{})
     if not isinstance(model,dict) or type(model.get('enabled',True)) is not bool or number(model.get('target_cpa',0))<0:
-        raise AppError('檔期模型設定不正確；CPA 上限須為非負數。')
+        raise AppError('檔期模型設定不正確。')
     from mori.retention_capacity import validate_config
     validate_config(data)
+    from mori.festival_integrity import validate_timelines
+    validate_timelines(data)
     from mori.invoices import validate_invoices
     validate_invoices(data)
     return data

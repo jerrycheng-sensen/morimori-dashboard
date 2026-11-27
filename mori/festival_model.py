@@ -12,9 +12,10 @@ from decimal import Decimal
 from mori.core import AppError, TAIPEI
 from mori.project_types import festival_groups
 from mori.project_matching import verified_match, unit_identity
+from mori.festival_integrity import event_audit,bucket,model_segments,automatic_scopes,meta_projects
 
 SNAPSHOT_PATH = 'festival-model.json'
-VERSION = 2
+VERSION = 3
 
 
 def source_signature(settings):
@@ -24,7 +25,7 @@ def source_signature(settings):
     keys = {p['account_key'] for p in plans}
     for scope in settings.get('festival_model',{}).get('capacity_scopes',{}).values():
         keys.update(v['account_key'] for v in scope.values() if isinstance(v,dict) and v.get('account_key'))
-    value = [VERSION,[{k:v for k,v in g.items() if k!='status'} for g in groups],[{k:v for k,v in p.items() if k!='status'} for p in plans],[a for a in settings['accounts'] if a['key'] in keys],settings.get('budget_transactions',[]),settings.get('festival_model',{}).get('capacity_scopes',{})]
+    value = [VERSION,[{k:v for k,v in g.items() if k!='status'} for g in groups],[{k:v for k,v in p.items() if k!='status'} for p in plans],[a for a in settings['accounts'] if a['key'] in keys],settings.get('budget_transactions',[]),settings.get('festival_model',{}).get('capacity_scopes',{}),settings.get('festival_model',{}).get('booking_timelines',{})]
     return hashlib.sha256(json.dumps(value,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
 
 
@@ -38,26 +39,32 @@ def numeric(value):
     return result
 
 
-def collect_projects(settings, factory, now):
+def collect_projects(settings, factory, now, platforms=None, reports=None):
     """Read complete ad windows regardless of project/plan management status."""
     from mori.budget_ledger import balance
     through = now.astimezone(TAIPEI).date()
     accounts = {a['key']:a for a in settings['accounts']}
-    output, cache, ownership = [], {}, {}
+    output, cache, ownership = [], reports if reports is not None else {}, {}
     for group in festival_groups(settings):
-        plans = [p for p in settings['projects'] if p.get('group_id')==group['id']]
+        plans = [p for p in settings['projects'] if p.get('group_id')==group['id'] and (platforms is None or accounts[p['account_key']]['platform'] in platforms)]
         if not plans: continue
         days, currencies = {}, set()
         planned_start = min(date.fromisoformat(p['start']) for p in plans)
         planned_end = max(date.fromisoformat(p['end']) for p in plans)
         authoritative, daily_cost, budget = Decimal(0),Decimal(0),Decimal(0)
-        plan_audit = []
-        for plan in plans:
-            account = accounts[plan['account_key']]
+        plan_audit = [];components={};source_units={};integrity=[]
+        segments=[]
+        for base in plans:
+            account=accounts[base['account_key']]
+            budget += Decimal(str(balance(settings,base['id'],through)['adjusted']))
+            start,end=date.fromisoformat(base['start']),min(through,date.fromisoformat(base['end']))
+            if start<=end:
+                for source,a,b,confirmed in model_segments(settings,base,account,start,end):
+                    segments.append(({**base,'start':str(a),'end':str(b)},source,confirmed))
+        for plan,account,confirmed in segments:
             start,end = date.fromisoformat(plan['start']),min(through,date.fromisoformat(plan['end']))
-            budget += Decimal(str(balance(settings,plan['id'],through)['adjusted']))
             if start>end: continue
-            cache_key=(account['key'],str(start),str(end))
+            cache_key=(account['key'],str(start),str(end),str(account.get('google_action_ids')),account.get('meta_action_type'))
             if cache_key not in cache:
                 cache[cache_key]=factory(account).fetch_model(account,start,end)
             report=cache[cache_key]
@@ -82,6 +89,14 @@ def collect_projects(settings, factory, now):
                 item=days.setdefault(str(row['date']),{'spend':Decimal(0),'bookings':Decimal(0)})
                 item['spend']+=cost;item['bookings']+=bookings
                 matched.append(row)
+                kind=bucket(account['platform'],row);ck=(account['platform'],kind)
+                component=components.setdefault(ck,{'platform':ck[0],'kind':kind,'spend':Decimal(0),'bookings':Decimal(0),'days':{}})
+                component['spend']+=cost;component['bookings']+=bookings
+                daily_component=component['days'].setdefault(str(row['date']),{'spend':Decimal(0),'bookings':Decimal(0)})
+                daily_component['spend']+=cost;daily_component['bookings']+=bookings
+                source={k:str(row.get(k) or '') for k in ('campaign_id','campaign_name','adset_id','adset_name')}
+                source.update(platform=account['platform'],account_key=account['key'])
+                source_units[(account['key'],source['campaign_id'],source['adset_id'])]=source
             plan_daily=sum((numeric(r.get('spend_raw',r['spend'])) for r in matched),Decimal(0))
             plan_authoritative=plan_daily
             if account['platform']=='meta':
@@ -94,10 +109,21 @@ def collect_projects(settings, factory, now):
                         raise AppError('Meta 整段花費的名稱尚未完整核對。')
                     if state is True:
                         plan_authoritative+=numeric(row.get('spend_raw',row['spend']))
+            audit=event_audit(report,matched,account,start,end,confirmed)
+            for ck in {(account['platform'],bucket(account['platform'],r)) for r in matched}:
+                components[ck]['bookings_valid']=components[ck].get('bookings_valid',True) and audit['status']=='checked'
+            if account['platform']=='meta':
+                for r in matched: components[('meta',bucket('meta',r))]['spend']-=numeric(r.get('spend_raw',r['spend']))
+                for r in report['whole_rows']:
+                    if verified_match(plan,r) is True:
+                        ck=('meta',bucket('meta',r))
+                        component=components.setdefault(ck,{'platform':'meta','kind':ck[1],'spend':Decimal(0),'bookings':Decimal(0),'days':{},'bookings_valid':audit['status']=='checked'})
+                        component['spend']+=numeric(r.get('spend_raw',r['spend']))
+            integrity.append({'plan_id':plan['id'],'platform':account['platform'],'account_key':account['key'],**audit})
             daily_cost+=plan_daily;authoritative+=plan_authoritative
             plan_audit.append({'plan_id':plan['id'],'platform':account['platform'],'since':str(start),'until':str(end),
                                'daily_cost':str(plan_daily),'whole_cost':str(plan_authoritative),
-                               'difference':str(plan_daily-plan_authoritative),'event':account.get('meta_action_type') if account['platform']=='meta' else account.get('google_action_ids',[])})
+                               'difference':str(plan_daily-plan_authoritative),'bookings':str(sum((numeric(r.get('conversion_raw',r.get('conversions'))) for r in matched),Decimal(0))),'event_status':audit['status'],'event':account.get('meta_action_type') if account['platform']=='meta' else account.get('google_action_ids',[])})
         if not currencies and planned_start>through: continue
         if len(currencies)!=1: raise AppError('同檔期的帳號幣別須一致且完整。')
         first,last = planned_start,min(planned_end,through)
@@ -115,7 +141,11 @@ def collect_projects(settings, factory, now):
                        'cost_difference':str(daily_cost-authoritative),
                        'bookings':str(sum((numeric(r['bookings']) for r in rows),Decimal(0))),
                        'last_paid_date':max((r['date'] for r in rows if numeric(r['spend'])>0),default=None),
-                       'rows':rows,'audit':plan_audit})
+                       'platform_windows':{platform:{'start':min(p['start'] for p in plans if accounts[p['account_key']]['platform']==platform),'end':max(p['end'] for p in plans if accounts[p['account_key']]['platform']==platform)} for platform in {accounts[p['account_key']]['platform'] for p in plans}},
+                       'rows':rows,'audit':plan_audit,'event_audits':integrity,'bookings_valid':all(a['status']=='checked' for a in integrity),
+                       'source_units':list(source_units.values()),
+                       'components':[{**{k:v for k,v in c.items() if k not in ('days','spend','bookings')},'spend':str(c['spend']),'bookings':str(c['bookings']),
+                           'rows':[{'date':day,'spend':str(v['spend']),'bookings':str(v['bookings'])} for day,v in sorted(c['days'].items())]} for c in components.values()]})
     if len({p['currency'] for p in output})!=1:
         raise AppError('檔期幣別不同或尚無已開始的廣告資料，不能合併訓練。')
     return output
@@ -148,6 +178,7 @@ def _fit(series):
 def fit_projects(projects, through):
     series={}
     for p in projects:
+        if p.get('bookings_valid') is False: return {'status':'needs_review','reason':'歷史訂位事件尚未覆蓋完整走期，暫停 CPA、邊際 CPA 與預算建議；保留花費與逐事件核對。'}
         rows=[(float(numeric(r['spend'])),float(numeric(r['bookings']))) for r in p['rows'] if r['date']<=str(through)]
         active=[x for x,y in rows if x>0]
         if len(rows)<28 or len(active)<21 or len(set(active))<8 or sum(y for x,y in rows)<30:
@@ -205,6 +236,7 @@ def projection(fit, project_id, duration_days, target_cpa=0):
 
 def observed_candidate(project, duration_days):
     """Best observed seven-day block, explicitly not an identified global optimum."""
+    if project.get('bookings_valid') is False: return None
     rows=sorted(project.get('rows',[]),key=lambda r:r['date'])
     blocks=[]
     for i in range(0,len(rows),7):
@@ -279,15 +311,24 @@ def refresh_snapshot(store, settings, factory, now=None, force=False):
     if not force and previous.get('source_signature')==signature and previous.get('updated_at') and now-datetime.fromisoformat(previous['updated_at'])<timedelta(hours=1):
         return previous
     try:
-        projects=collect_projects(settings,factory,now)
+        reports={};source_warnings=[]
+        festival_ids={g['id'] for g in festival_groups(settings)}
+        has_meta=any(a['platform']=='meta' and any(p['account_key']==a['key'] and p.get('group_id') in festival_ids for p in settings['projects']) for a in settings['accounts'])
+        meta_raw=collect_projects(settings,factory,now,platforms={'meta'},reports=reports) if has_meta else []
+        try: projects=collect_projects(settings,factory,now,reports=reports)
+        except AppError:
+            if not meta_raw: raise
+            projects=meta_raw;source_warnings.append('Google 歷史明細本次未完整取得；Meta 購買模型照常更新，Google 未取得資料不當成零。')
         through=now.astimezone(TAIPEI).date()-timedelta(days=4)
-        models=build_models(projects,through)
+        model_projects=meta_projects(meta_raw or projects)
+        models=build_models(model_projects,through)
         fit=models['aggregate']['fit']
         from mori.retention_capacity import collect_capacity_sources,collect_catalogs
-        capacities=collect_capacity_sources(settings,factory,now)
         catalogs=collect_catalogs(settings,factory)
+        scopes=automatic_scopes(settings,projects,catalogs)
+        capacities=collect_capacity_sources(settings,factory,now,scopes=scopes)
         snapshot={'version':VERSION,'source_signature':signature,'updated_at':now.isoformat(),
-                  'success_date':today,'mature_through':str(through),'projects':projects,'fit':fit,'models':models,'capacities':capacities,'source_catalogs':catalogs,'last_error':None}
+                  'success_date':today,'mature_through':str(through),'projects':projects,'model_projects':model_projects,'analysis_platform':'meta','fit':fit,'models':models,'capacities':capacities,'source_catalogs':catalogs,'automatic_sources':scopes,'source_warnings':source_warnings,'last_error':None}
     except Exception as exc:
         reason=str(exc) if isinstance(exc,AppError) else '模型資料格式或運算尚未完成，保留上次成功結果，請核對來源後重試。'
         snapshot={**previous,'last_attempt':now.isoformat(),'last_error':reason}
@@ -315,6 +356,61 @@ def main():
     except Exception:
         print('Festival model update failed; inspect private snapshot and application settings.')
         return 1
+
+
+
+def allocation_projection(projects,through,duration_days):
+    """Fixed Meta mix, with separately fitted direct-attribution responses.
+
+    Cannot infer upper-funnel causal assistance from booking attribution. Never
+    substitute historical average CPA for the derivative of a response curve.
+    """
+    from mori.festival_integrity import META_SCENARIO
+    empty={'sweet':None,'upper':None,'curve':[],'candidate':None}
+    if not projects or any(p.get('bookings_valid') is False for p in projects):
+        return {**empty,'diagnosis':'Meta 訂位事件或花費尚未核對，暫不推估。'}
+    fits={};missing=[]
+    for kind,weight in META_SCENARIO.items():
+        parts=[]
+        for p in projects:
+            component=next((c for c in p.get('components',[]) if c['platform']=='meta' and c['kind']==kind),None)
+            if not component: continue
+            byday={r['date']:r for r in component['rows']}
+            rows=[byday.get(r['date'],{'date':r['date'],'spend':'0','bookings':'0'}) for r in p['rows']]
+            parts.append({'id':p['id'],'name':p['name'],'rows':rows,'bookings_valid':component.get('bookings_valid',True)})
+        if not parts:
+            missing.append(kind+'：未找到對應廣告');continue
+        total=sum((numeric(r['bookings']) for p in parts for r in p['rows'] if r['date']<=str(through)),Decimal(0))
+        active=[float(numeric(r['spend'])) for p in parts for r in p['rows'] if r['date']<=str(through) and numeric(r['spend'])>0]
+        if total==0 and len(active)>=21:
+            fits[kind]={'zero_attributed':True,'ranges':{'all':[min(active),max(active)]}};continue
+        model=build_models(parts,through)['aggregate']['fit']
+        if model.get('status')!='estimated': missing.append(kind+'：樣本或回測不足')
+        else: fits[kind]=model
+    if any(c['kind'] in ('其他／待分類','轉換／未標新舊客') and numeric(c['spend'])>0 for p in projects for c in p.get('components',[])):
+        missing.append('部分 Meta 廣告類型或新舊客尚未辨識')
+    if missing:
+        return {**empty,'diagnosis':'尚無足夠資料估計這組配置：'+'；'.join(missing)+'。保留實際 CPA，不沿用忽略配置差異的舊曲線。','missing_components':missing}
+    # All proposed spends must be within each component's observed support.
+    low=max(fits[k]['ranges']['all'][0]/float(w) for k,w in META_SCENARIO.items())
+    high=min(fits[k]['ranges']['all'][1]/float(w) for k,w in META_SCENARIO.items())
+    if low>=high:
+        return {**empty,'diagnosis':'20%／5%／5%／25%／45% 配置超出歷史共同觀察範圍，暫不外推甜蜜點。'}
+    points=[]
+    for i in range(121):
+        daily=low+(high-low)*i/120;y=0.;derivative=0.
+        for kind,w in META_SCENARIO.items():
+            f=fits[kind]
+            if f.get('zero_attributed'): continue
+            share=float(w);x=daily*share;h=hill(x,f['k'],f['slope']);a=f['amplitudes']['all']
+            y+=a*h;derivative+=share*a*f['slope']*h*(1-h)/x
+        if y<=0: continue
+        points.append({'budget':daily*duration_days,'bookings':y*duration_days,'cpa':daily/y,'marginal_cpa':1/derivative if derivative>0 else None})
+    if not points: return {**empty,'diagnosis':'這組配置尚無可估計訂位。'}
+    best=min(range(len(points)),key=lambda i:points[i]['cpa']);interior=0<best<len(points)-1
+    candidate={**points[best],'basis':'model_interior' if interior else 'model_boundary'}
+    return {'sweet':points[best] if interior else None,'upper':None,'curve':points,'candidate':candidate,
+            'diagnosis':'固定 Meta 假設配置下的直接歸因觀察模型；'+('最低點在觀察範圍內。' if interior else '最低點位於範圍邊界，尚未證明真正最低點。')+' 曝光、流量與互動的間接助攻無法由這個模型識別。'}
 
 
 if __name__=='__main__':

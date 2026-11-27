@@ -151,3 +151,12 @@ Google 第一版僅提供行銷活動層級規則；未移植 Manus AI 聊天與
 - Capacity sources are selected account/adset/campaign IDs, not manually entered budget/CPA thresholds. Meta uses current targeting estimates and whole-week deduplicated reach; Google uses non-overlapping brand historical search metrics and observed CTR/CPC. These are conditional demand proxies, not verified repeat customers or an identified profit-maximizing limit. No automatic 4:6-to-budget conversion.
 - Unconfirmed sources or failed/malformed API data yield explicit missing capacity, never zero or a partial combined upper. No production capacity number may be claimed until actual sources are selected and APIs return complete data.
 - Local Microsoft JhengHei/JhengHei UI stack with device font diagnostic; no proprietary font redistribution. Main text 18px, supporting 16px, controls 17px.
+
+
+## 2026.11.28.60 — Meta-first CPA provenance
+
+- User confirmed using Meta purchases first and leaving GTM/account conversion settings unchanged. Meta model uses Meta authoritative whole-period cost / Meta purchase count only; Google cost and candidate historical events remain separate diagnostics. No guessed Google historical booking totals.
+- Historical Google event metadata and all event counts are retained per immutable matched unit/date. Selected events that start later than other booking candidates are flagged; no summing multiple tracking events into duplicate bookings. Optional dated overrides remain model-only; the default UI does not ask for event-date setup to use Meta.
+- Actual CPA is shown before hypothetical CPA. The Meta 20/5/5/25/45 split is explicitly a proposed scenario, never historical truth. Component curves require individual samples, chronological holdout and joint observed spend support; missing types/new-old labels block scenario forecasts, not actual CPA. Marginal CPA uses the derivative of summed component responses, not average CPA.
+- Meta capacity sources are discovered from campaign names containing 再行銷 and project-attributed adset IDs/names. Google brand candidates are derived from attributed search campaigns with verified brand-only keywords. No manual source selection/save is required. Current API audience estimates may still be unavailable or overlap cannot be deduplicated; unknown is displayed with reason.
+- Audience capacity is conditional on delivery assumptions, not a mathematically proven profit-maximizing budget. No advertising spend or external GTM settings changed.
