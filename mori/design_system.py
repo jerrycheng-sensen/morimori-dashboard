@@ -14,7 +14,8 @@ ICONS = {
 
 
 def stylesheet():
-    return '<style>'+ (Path(__file__).resolve().parents[1]/'assets/dashboard.css').read_text()+'</style>'
+    assets = Path(__file__).resolve().parents[1] / 'assets'
+    return '<style>' + (assets / 'dashboard.css').read_text(encoding='utf-8') + '\n' + (assets / 'workspace.css').read_text(encoding='utf-8') + '</style>'
 
 
 def icon_svg(name='chart'):

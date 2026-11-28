@@ -84,6 +84,7 @@
     "tests/test_ui_performance.py",
     "tests/test_unassigned.py",
     "tests/test_vault.py",
-    "tools/check_release.py"
+    "tools/check_release.py",
+    "assets/workspace.css"
   ]
 }

@@ -71,7 +71,7 @@ def chart_spec(title, color, money=False, platform='combined'):
         'height': 215,
         'layer': [
             {'mark': {'type': 'area', 'color': color, 'opacity': .09, 'interpolate': 'linear'}},
-            {'mark': {'type': 'line', 'color': color, 'strokeWidth': 2.6, 'point': {'filled': True, 'size': 24}}},
+            {'mark': {'type': 'line', 'color': color, 'strokeWidth': 2.6}},
         ],
         'encoding': {
             'x': {'field': 'date', 'type': 'temporal', 'title': None,
@@ -97,10 +97,9 @@ def overview_controls(names):
     st.html(stylesheet())
     st.markdown(page_header('廣告成效總覽','掌握投入與訂位，找出值得調整的地方。','MORI / PERFORMANCE'), unsafe_allow_html=True)
     with st.container(key='overview_query', border=True):
-        a, b, c, d = st.columns([1.4, .8, .6, .55], vertical_alignment='bottom')
+        a, b = st.columns([2, 1], vertical_alignment='bottom')
         keys = a.multiselect('廣告帳號', list(names), default=list(names), format_func=names.get, key='overview_accounts')
         preset = b.selectbox('查詢期間', ['近 7 天', '昨天', '近 30 天', '近 90 天', '本月', '自訂日期'], key='overview_period_preset')
-        compare = c.checkbox('與前期比較', value=True, help='使用相同天數；例如本次 7 天，就與前 7 天比較。', key='overview_compare')
         today = datetime.now(TAIPEI).date()
         yesterday = today - timedelta(days=1)
         if preset == '自訂日期':
@@ -108,6 +107,8 @@ def overview_controls(names):
         else:
             start = yesterday if preset == '昨天' else today.replace(day=1) if preset == '本月' else today-timedelta(days=90 if preset == '近 90 天' else 30 if preset == '近 30 天' else 7)
             period = (start, max(start, yesterday))
+        c, d = st.columns([3, 1], vertical_alignment='center')
+        compare = c.checkbox('與前期比較', value=True, help='使用相同天數；例如本次 7 天，就與前 7 天比較。', key='overview_compare')
         read = d.button('讀取數據', type='primary', icon=':material/refresh:', key='overview_read',width='stretch')
         if len(period) == 2:
             st.caption(f'本次查詢 {period[0]:%Y/%m/%d} — {period[1]:%Y/%m/%d} · 依各帳號時區。按「讀取數據」更新，下方切換檢視沿用本次資料。')
@@ -207,7 +208,7 @@ def render_report(view, keys, period, settings, names, account_by_key):
 
 def _render_report(view, keys, period, settings, names, account_by_key):
     if not view:
-        st.markdown('<div class="overview-start"><span>準備查看廣告成效</span><h2>選好日期，讀取你的雙平台數據。</h2><p>預設查看近 7 個完整日；先避開今天還在變動的數字。</p></div>', unsafe_allow_html=True)
+        st.markdown('<section class="overview-start"><span>尚未讀取資料</span><h2>你的投放表現，從這裡開始掌握。</h2><p>選擇帳號與期間，按「讀取數據」查看花費、訂位與 CPA。預設為近 7 個完整日。</p><div class="mori-await-grid"><div class="mori-await-card"><span>廣告花費</span><strong>—</strong></div><div class="mori-await-card"><span>平台回報訂位</span><strong>—</strong></div><div class="mori-await-card"><span>訂位 CPA</span><strong>—</strong></div></div><p>讀取後顯示每日趨勢、雙平台比較與活動明細。</p></section>', unsafe_allow_html=True)
         return
     if tuple(map(str, period)) != view['period'] or keys != view['keys'] or st.session_state.get('overview_compare', view.get('comparison', False)) != view.get('comparison', False):
         st.info('上方查詢條件已變更。請按「讀取數據」更新；目前顯示上次查詢結果。')
@@ -283,24 +284,41 @@ def _render_report(view, keys, period, settings, names, account_by_key):
     if view.get('comparison'):
         st.caption('前期比較：' + ' — '.join(map(str, view.get('previous_period', previous_period(view['period'])))) + (' · 專案檢視另依各計畫廣告走期篩選。' if selected_plans else ' · 相同天數，採相同平台篩選。'))
     st.divider()
-    st.subheader('每天的變化')
-    indicator = st.radio('趨勢指標', ['spend', 'conversions', 'cpa'], format_func=lambda k: {'spend':'廣告花費','conversions':'平台回報訂位','cpa':'訂位 CPA'}[k], horizontal=True, key='overview_trend')
-    chart_rows = []
-    for (p, cur), part in shown.groupby(['platform', 'currency']):
-        for day, daily in part.groupby('date'):
-            values = totals(daily)
-            value = values[{'spend':'spend','conversions':'bookings','cpa':'cpa'}[indicator]]
-            chart_rows.append({'date':day, 'value':float(value) if value is not None else None, '平台':PLATFORMS[p], 'currency':cur})
-    for cur in shown.currency.unique():
-        chart = pd.DataFrame([r for r in chart_rows if r['currency'] == cur])
-        spec = chart_spec({'spend':'廣告花費','conversions':'平台回報訂位','cpa':'訂位 CPA'}[indicator], '#17421E', indicator != 'conversions', 'meta' if set(shown.platform) == {'meta'} else 'combined')
-        spec['height'] = 280
-        spec['encoding']['color'] = {'field':'平台','type':'nominal','scale':{'domain':['Meta','Google Ads'],'range':['#17421E','#b79a65']},'legend':{'title':None,'orient':'top'}}
-        spec['encoding']['tooltip'].append({'field':'平台','type':'nominal'})
-        for layer in spec['layer']:
-            layer['mark'].pop('color', None)
-        with st.container(border=True):
-            st.vega_lite_chart(chart, spec, width='stretch')
+    chart_column, context_column = st.columns([2.1, 1], gap='medium')
+    with chart_column, st.container(key='overview_trend_panel', border=True):
+        st.subheader('每天的變化')
+        indicator = st.radio('趨勢指標', ['spend', 'conversions', 'cpa'], format_func=lambda k: {'spend':'廣告花費','conversions':'平台回報訂位','cpa':'訂位 CPA'}[k], horizontal=True, key='overview_trend')
+        chart_rows = []
+        for (p, cur), part in shown.groupby(['platform', 'currency']):
+            for day, daily in part.groupby('date'):
+                values = totals(daily)
+                value = values[{'spend':'spend','conversions':'bookings','cpa':'cpa'}[indicator]]
+                chart_rows.append({'date':day, 'value':float(value) if value is not None else None, '平台':PLATFORMS[p], 'currency':cur})
+        for cur in shown.currency.unique():
+            chart = pd.DataFrame([r for r in chart_rows if r['currency'] == cur])
+            spec = chart_spec({'spend':'廣告花費','conversions':'平台回報訂位','cpa':'訂位 CPA'}[indicator], '#17421E', indicator != 'conversions', 'meta' if set(shown.platform) == {'meta'} else 'combined')
+            spec['height'] = 280
+            spec['encoding']['color'] = {'field':'平台','type':'nominal','scale':{'domain':['Meta','Google Ads'],'range':['#17421E','#b79a65']},'legend':{'title':None,'orient':'top'}}
+            spec['encoding']['tooltip'].append({'field':'平台','type':'nominal'})
+            for layer in spec['layer']:
+                layer['mark'].pop('color', None)
+            with st.container(border=False):
+                st.vega_lite_chart(chart, spec, width='stretch')
+    with context_column, st.container(key='overview_context_panel', border=True):
+        st.markdown('<div class="mori-section-heading"><h2>本次資料範圍</h2></div>', unsafe_allow_html=True)
+        st.caption('目前查詢')
+        st.write('全部帳號成效' if group_id == 'all' else group_name(group_id))
+        st.caption('平台')
+        st.write('Meta ＋ Google Ads' if platform == 'all' else PLATFORMS[platform])
+        st.caption('資料完整度')
+        required = set(relevant_keys)
+        loaded_count = len(required & loaded)
+        st.write(f'{loaded_count} / {len(required)} 個帳號已讀取')
+        if incomplete:
+            st.warning('帳號資料尚未完整，合計暫不顯示。')
+        else:
+            st.success('本次所選帳號已讀取。')
+        st.caption('平台回報訂位可能重複歸因，不能直接當成已去重的實際訂位或到店人數。')
     st.divider()
     st.subheader('雙平台成效比較' if platform == 'all' else PLATFORMS[platform] + ' 成效')
     chosen_platforms = [p for p in ('meta','google') if any(account_by_key[k]['platform'] == p for k in relevant_keys)]
